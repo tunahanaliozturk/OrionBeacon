@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="docs/logo.png" alt="OrionBeacon" width="150" />
+</p>
+
 # OrionBeacon
 
 [![CI/CD](https://github.com/tunahanaliozturk/OrionBeacon/actions/workflows/ci-cd.yml/badge.svg)](https://github.com/tunahanaliozturk/OrionBeacon/actions/workflows/ci-cd.yml)
