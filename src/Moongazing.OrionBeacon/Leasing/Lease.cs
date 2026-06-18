@@ -16,8 +16,8 @@ public sealed class Lease
     /// <param name="expiresAt">When the lease lapses unless renewed.</param>
     public Lease(string resource, string holderId, long fencingToken, DateTimeOffset acquiredAt, DateTimeOffset expiresAt)
     {
-        ArgumentException.ThrowIfNullOrEmpty(resource);
-        ArgumentException.ThrowIfNullOrEmpty(holderId);
+        ArgumentException.ThrowIfNullOrWhiteSpace(resource);
+        ArgumentException.ThrowIfNullOrWhiteSpace(holderId);
         Resource = resource;
         HolderId = holderId;
         FencingToken = fencingToken;
