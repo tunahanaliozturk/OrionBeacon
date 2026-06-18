@@ -16,7 +16,7 @@ public sealed class InMemoryLeaseStoreEdgeTests
     [Fact]
     public void The_internal_clock_constructor_rejects_a_null_clock()
     {
-        Assert.Throws<ArgumentNullException>(() => new InMemoryLeaseStore(null!));
+        Assert.Throws<ArgumentNullException>(() => new InMemoryLeaseStore((Func<DateTimeOffset>)null!));
     }
 
     [Theory]
@@ -42,15 +42,23 @@ public sealed class InMemoryLeaseStoreEdgeTests
     }
 
     [Fact]
-    public async Task Acquire_accepts_a_whitespace_resource_because_only_null_or_empty_is_guarded()
+    public async Task Acquire_rejects_a_whitespace_resource()
     {
-        // ArgumentException.ThrowIfNullOrEmpty permits whitespace; documenting real behavior.
+        // The store now guards with ArgumentException.ThrowIfNullOrWhiteSpace, so a whitespace-only
+        // resource is rejected as an invalid identity rather than silently leased.
         var store = new InMemoryLeaseStore();
 
-        var result = await store.TryAcquireOrRenewAsync("   ", "a", Lease);
+        await Assert.ThrowsAnyAsync<ArgumentException>(
+            () => store.TryAcquireOrRenewAsync("   ", "a", Lease));
+    }
 
-        Assert.Equal(LeaseOutcome.Acquired, result.Outcome);
-        Assert.Equal("   ", result.Lease!.Resource);
+    [Fact]
+    public async Task Acquire_rejects_a_whitespace_candidate()
+    {
+        var store = new InMemoryLeaseStore();
+
+        await Assert.ThrowsAnyAsync<ArgumentException>(
+            () => store.TryAcquireOrRenewAsync("res", "   ", Lease));
     }
 
     [Theory]
@@ -186,16 +194,59 @@ public sealed class InMemoryLeaseStoreEdgeTests
     }
 
     [Fact]
-    public async Task An_already_cancelled_token_still_completes_for_the_in_memory_store()
+    public async Task Acquire_honors_an_already_cancelled_token()
     {
-        // The in-memory store runs synchronously and does not observe cancellation; it completes the
-        // operation regardless. Documenting that real behavior so a future regression is visible.
+        // The store now checks the token at the start of the operation, so an already-cancelled
+        // token throws rather than silently completing the acquire.
         var store = new InMemoryLeaseStore();
         using var cts = new CancellationTokenSource();
         await cts.CancelAsync();
 
-        var result = await store.TryAcquireOrRenewAsync("res", "a", Lease, cts.Token);
+        await Assert.ThrowsAsync<OperationCanceledException>(
+            () => store.TryAcquireOrRenewAsync("res", "a", Lease, cts.Token));
+    }
 
-        Assert.Equal(LeaseOutcome.Acquired, result.Outcome);
+    [Fact]
+    public async Task Release_honors_an_already_cancelled_token()
+    {
+        var store = new InMemoryLeaseStore();
+        await store.TryAcquireOrRenewAsync("res", "a", Lease);
+        using var cts = new CancellationTokenSource();
+        await cts.CancelAsync();
+
+        await Assert.ThrowsAsync<OperationCanceledException>(
+            () => store.ReleaseAsync("res", "a", cts.Token));
+    }
+
+    [Fact]
+    public async Task An_expired_lease_fails_over_to_a_waiting_candidate_via_an_injected_TimeProvider()
+    {
+        // Drive failover purely by time: the holder acquires, the controllable clock advances past
+        // the lease duration with no real delay, and the next cycle lets the waiting rival win with
+        // an incremented fencing token. This exercises the public TimeProvider constructor.
+        var time = new ControllableTimeProvider(DateTimeOffset.FromUnixTimeSeconds(1_700_000_000));
+        var store = new InMemoryLeaseStore(time);
+
+        var held = await store.TryAcquireOrRenewAsync("res", "leader", Lease);
+        Assert.Equal(LeaseOutcome.Acquired, held.Outcome);
+
+        // While the lease is live the rival is a follower.
+        var denied = await store.TryAcquireOrRenewAsync("res", "rival", Lease);
+        Assert.Equal(LeaseOutcome.Denied, denied.Outcome);
+        Assert.Equal("leader", denied.HolderId);
+
+        // The leader goes dark; the lease lapses purely by the clock moving forward.
+        time.Advance(Lease + TimeSpan.FromTicks(1));
+
+        var failover = await store.TryAcquireOrRenewAsync("res", "rival", Lease);
+        Assert.Equal(LeaseOutcome.Acquired, failover.Outcome);
+        Assert.Equal("rival", failover.Lease!.HolderId);
+        Assert.Equal(held.Lease!.FencingToken + 1, failover.Lease.FencingToken);
+    }
+
+    [Fact]
+    public void The_TimeProvider_constructor_rejects_a_null_provider()
+    {
+        Assert.Throws<ArgumentNullException>(() => new InMemoryLeaseStore((TimeProvider)null!));
     }
 }

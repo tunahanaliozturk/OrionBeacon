@@ -57,6 +57,24 @@ public sealed class LeaderElectionOptionsTests
     }
 
     [Fact]
+    public void A_whitespace_resource_name_is_rejected()
+    {
+        var options = Valid();
+        options.ResourceName = "   ";
+
+        Assert.Throws<ArgumentException>(() => Validate(options));
+    }
+
+    [Fact]
+    public void A_whitespace_candidate_id_is_rejected()
+    {
+        var options = Valid();
+        options.CandidateId = "   ";
+
+        Assert.Throws<ArgumentException>(() => Validate(options));
+    }
+
+    [Fact]
     public void An_empty_candidate_id_is_rejected()
     {
         var options = Valid();

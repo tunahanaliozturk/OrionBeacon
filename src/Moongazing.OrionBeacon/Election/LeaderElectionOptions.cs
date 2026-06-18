@@ -32,8 +32,8 @@ public sealed class LeaderElectionOptions
 
     internal void Validate()
     {
-        ArgumentException.ThrowIfNullOrEmpty(ResourceName);
-        ArgumentException.ThrowIfNullOrEmpty(CandidateId);
+        ArgumentException.ThrowIfNullOrWhiteSpace(ResourceName);
+        ArgumentException.ThrowIfNullOrWhiteSpace(CandidateId);
         if (LeaseDuration <= TimeSpan.Zero)
         {
             throw new ArgumentOutOfRangeException(nameof(LeaseDuration), LeaseDuration, "LeaseDuration must be positive.");

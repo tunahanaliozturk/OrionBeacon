@@ -50,12 +50,19 @@ public sealed class LeaseTests
     }
 
     [Fact]
-    public void A_whitespace_resource_is_accepted_because_only_null_or_empty_is_guarded()
+    public void A_whitespace_resource_is_rejected()
     {
-        // The Lease guard uses ArgumentException.ThrowIfNullOrEmpty, which permits whitespace.
-        // Documenting the real behavior, not asserting a desired one.
-        var lease = new Lease(" ", "holder", 1, Acquired, Acquired);
-        Assert.Equal(" ", lease.Resource);
+        // The Lease guard uses ArgumentException.ThrowIfNullOrWhiteSpace, so a whitespace-only
+        // resource is an invalid identity and is rejected just like null or empty.
+        Assert.Throws<ArgumentException>(() =>
+            new Lease("   ", "holder", 1, Acquired, Acquired));
+    }
+
+    [Fact]
+    public void A_whitespace_holder_is_rejected()
+    {
+        Assert.Throws<ArgumentException>(() =>
+            new Lease("res", "   ", 1, Acquired, Acquired));
     }
 
     [Fact]

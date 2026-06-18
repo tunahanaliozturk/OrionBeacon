@@ -4,6 +4,12 @@ namespace Moongazing.OrionBeacon.Leasing;
 /// A process-local <see cref="ILeaseStore"/>. Correct for a single node and for tests; it elects a
 /// leader only among candidates in the same process. Atomicity is provided by a lock around the
 /// acquire/renew/release critical section, and the fencing token increases on every new term.
+/// <para>
+/// The clock is supplied by a <see cref="TimeProvider"/> (defaulting to
+/// <see cref="TimeProvider.System"/>). Pass a controllable provider to drive lease expiry forward
+/// without real delays, so time-driven failover (an expired lease letting a rival win on the next
+/// cycle) can be demonstrated and tested deterministically.
+/// </para>
 /// </summary>
 public sealed class InMemoryLeaseStore : ILeaseStore
 {
@@ -13,8 +19,21 @@ public sealed class InMemoryLeaseStore : ILeaseStore
 
     /// <summary>Create a store using the system clock.</summary>
     public InMemoryLeaseStore()
-        : this(() => DateTimeOffset.UtcNow)
+        : this(TimeProvider.System)
     {
+    }
+
+    /// <summary>
+    /// Create a store driven by the supplied <see cref="TimeProvider"/>. Inject a controllable
+    /// provider (for example <c>Microsoft.Extensions.Time.Testing.FakeTimeProvider</c>) to advance
+    /// the clock past a lease's expiry in a test and let a rival candidate take over on the next
+    /// acquire cycle, with no real sleep.
+    /// </summary>
+    /// <param name="timeProvider">The clock the store reads the current time from.</param>
+    public InMemoryLeaseStore(TimeProvider timeProvider)
+    {
+        ArgumentNullException.ThrowIfNull(timeProvider);
+        now = () => timeProvider.GetUtcNow();
     }
 
     internal InMemoryLeaseStore(Func<DateTimeOffset> now)
@@ -27,8 +46,9 @@ public sealed class InMemoryLeaseStore : ILeaseStore
     public Task<LeaseAcquisition> TryAcquireOrRenewAsync(
         string resource, string candidateId, TimeSpan duration, CancellationToken cancellationToken = default)
     {
-        ArgumentException.ThrowIfNullOrEmpty(resource);
-        ArgumentException.ThrowIfNullOrEmpty(candidateId);
+        cancellationToken.ThrowIfCancellationRequested();
+        ArgumentException.ThrowIfNullOrWhiteSpace(resource);
+        ArgumentException.ThrowIfNullOrWhiteSpace(candidateId);
         if (duration <= TimeSpan.Zero)
         {
             throw new ArgumentOutOfRangeException(nameof(duration), duration, "Lease duration must be positive.");
@@ -62,8 +82,9 @@ public sealed class InMemoryLeaseStore : ILeaseStore
     /// <inheritdoc />
     public Task ReleaseAsync(string resource, string candidateId, CancellationToken cancellationToken = default)
     {
-        ArgumentException.ThrowIfNullOrEmpty(resource);
-        ArgumentException.ThrowIfNullOrEmpty(candidateId);
+        cancellationToken.ThrowIfCancellationRequested();
+        ArgumentException.ThrowIfNullOrWhiteSpace(resource);
+        ArgumentException.ThrowIfNullOrWhiteSpace(candidateId);
 
         lock (gate)
         {

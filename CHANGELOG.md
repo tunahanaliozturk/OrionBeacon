@@ -6,6 +6,28 @@ All notable changes to OrionBeacon are documented in this file. The format is ba
 [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and this project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.0] - 2026-06-19
+
+### Added
+
+- Time-driven automatic failover: `InMemoryLeaseStore` now accepts a `TimeProvider` (defaulting to
+  `TimeProvider.System`) through a new public constructor. Inject a controllable provider to advance
+  a lease past its expiry with no real delay, so a rival candidate wins the next acquire cycle. This
+  makes expiry-driven failover, previously only reachable through graceful `ResignAsync`,
+  demonstrable and testable. The existing constructors are unchanged.
+
+### Fixed
+
+- `InMemoryLeaseStore` now honors the `CancellationToken`: `TryAcquireOrRenewAsync` and
+  `ReleaseAsync` throw at the start when the token is already cancelled instead of completing the
+  operation regardless.
+- Identity validation now rejects whitespace-only values. `Lease`, `InMemoryLeaseStore`, and
+  `LeaderElectionOptions.Validate()` use `ArgumentException.ThrowIfNullOrWhiteSpace` for
+  `ResourceName` / `CandidateId` / holder, so a whitespace-only identity no longer passes the guards
+  that previously only rejected null or empty.
+
+[0.2.0]: https://github.com/tunahanaliozturk/OrionBeacon/releases/tag/v0.2.0
+
 ## [0.1.0] - 2026-06-14
 
 ### Added
