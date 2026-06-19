@@ -24,7 +24,7 @@ Scale a worker to three instances and your nightly job runs three times. The fix
 - **Pluggable storage.** The default `InMemoryLeaseStore` elects within one process (single node or tests). Implement `ILeaseStore` over Redis, a database, or any shared store to elect across a cluster; the in-memory store is only added if none is registered.
 - **OpenTelemetry built in.** A `Meter` named `Moongazing.OrionBeacon` exposes attempt and transition counters plus an `is_leader` gauge, with no extra dependency.
 - **Leadership-change events.** Register an `ILeadershipObserver` to react to `OnElected` and `OnDeposed`. The observer is fault-safe: an exception it throws never disrupts election.
-- **Testable by design.** The election state machine advances one cycle at a time, so it is fully testable without real timers or sleeps.
+- **Testable by design.** The election state machine advances one cycle at a time, so it is fully testable without real timers or sleeps. `InMemoryLeaseStore` also takes a `TimeProvider`, so a test can advance the clock past a lease's expiry and exercise time-driven failover with no real delay.
 - **No heavy dependencies.** One reference, `Microsoft.Extensions.Hosting.Abstractions`. Multi-targets `net8.0`, `net9.0`, and `net10.0`.
 
 ## Install
@@ -182,6 +182,17 @@ var elector = new LeaderElector(store, options, new LeaderElectionDiagnostics())
 bool isLeader = await elector.TryElectAsync(); // first cycle wins; fencing token starts at 1
 ```
 
+To test time-driven failover, build the store on a controllable `TimeProvider` and advance it past the lease duration; the follower then wins the next cycle once the lease has lapsed.
+
+```csharp
+var clock = new FakeTimeProvider();                // Microsoft.Extensions.Time.Testing
+var store = new InMemoryLeaseStore(clock);
+
+await holder.TryElectAsync();                       // holder takes the lease
+clock.Advance(options.LeaseDuration + TimeSpan.FromSeconds(1)); // lease lapses
+bool followerWins = await follower.TryElectAsync(); // follower wins the next cycle
+```
+
 Run the library's own suite from the repository root:
 
 ```
@@ -199,6 +210,8 @@ dotnet run -c Release --project benchmarks/Moongazing.OrionBeacon.Benchmarks
 ## Versioning
 
 OrionBeacon follows [SemVer](https://semver.org/). The package multi-targets `net8.0`, `net9.0`, and `net10.0`. The project builds with `TreatWarningsAsErrors`, nullable reference types enabled, and the latest analyzers. Notable changes are recorded in [CHANGELOG.md](CHANGELOG.md).
+
+The current release, **0.2.0**, adds a public `InMemoryLeaseStore(TimeProvider)` constructor (defaulting to `TimeProvider.System`) so tests and consumers can drive a deterministic clock and exercise time-driven failover, and makes `TryAcquireOrRenewAsync` and `ReleaseAsync` honor the `CancellationToken` by throwing when it is already cancelled. The existing constructors are unchanged.
 
 ## More from the Orion family
 
