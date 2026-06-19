@@ -14,7 +14,7 @@ internal static class FencingDemo
 {
     public static async Task RunAsync()
     {
-        DemoConsole.Banner("4. Fencing: a downstream store rejects writes from a stale leader");
+        DemoConsole.Banner("5. Fencing: a downstream store rejects writes from a stale leader");
 
         var store = new InMemoryLeaseStore();
         using var diagnostics = new LeaderElectionDiagnostics();

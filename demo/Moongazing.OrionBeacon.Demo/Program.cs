@@ -20,6 +20,7 @@ internal static class Program
         await ElectionDemo.RunAsync();
         await RenewalDemo.RunAsync();
         await ResignationDemo.RunAsync();
+        await FailoverDemo.RunAsync();
         await FencingDemo.RunAsync();
 
         DemoConsole.Banner("Demo complete");
