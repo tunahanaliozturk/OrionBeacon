@@ -52,6 +52,10 @@ internal static class FailoverDemo
 
         bool followerBefore = await follower.TryElectAsync();
         DemoConsole.Step($"node-2 tries while the lease is live: IsLeader = {followerBefore} (denied)");
+        if (followerBefore)
+        {
+            throw new InvalidOperationException("node-2 must be denied while node-1's lease is still live.");
+        }
 
         DemoConsole.Step("node-1 stops renewing (crash or partition); advance the clock past the lease");
         clock.Advance(leaseDuration + TimeSpan.FromSeconds(1));
@@ -59,9 +63,17 @@ internal static class FailoverDemo
         bool followerAfter = await follower.TryElectAsync();
         long secondTermToken = follower.Lease!.FencingToken;
         DemoConsole.Step($"node-2 runs the next cycle: IsLeader = {followerAfter}, token = {secondTermToken}");
+        if (!followerAfter)
+        {
+            throw new InvalidOperationException("node-2 must win leadership once node-1's lease lapses.");
+        }
 
-        DemoConsole.Note(secondTermToken > firstTermToken
-            ? $"New term token {secondTermToken} is strictly higher than the lapsed term ({firstTermToken})."
-            : "Token did not advance across the failover.");
+        if (secondTermToken <= firstTermToken)
+        {
+            throw new InvalidOperationException(
+                $"Fencing token must advance across failover, but {secondTermToken} did not exceed {firstTermToken}.");
+        }
+
+        DemoConsole.Note($"New term token {secondTermToken} is strictly higher than the lapsed term ({firstTermToken}).");
     }
 }
