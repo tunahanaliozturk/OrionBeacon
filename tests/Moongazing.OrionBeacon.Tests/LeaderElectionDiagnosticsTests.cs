@@ -1,6 +1,7 @@
 namespace Moongazing.OrionBeacon.Tests;
 
 using System.Diagnostics.Metrics;
+using System.Reflection;
 
 using Moongazing.OrionBeacon.Diagnostics;
 
@@ -24,6 +25,35 @@ public sealed class LeaderElectionDiagnosticsTests
     public void The_meter_name_is_the_published_constant()
     {
         Assert.Equal("Moongazing.OrionBeacon", LeaderElectionDiagnostics.MeterName);
+    }
+
+    [Fact]
+    public void The_meter_version_derives_from_the_assembly_informational_version()
+    {
+        // The meter version must track the package version automatically, so assert the live meter
+        // carries the version derived from the assembly informational version rather than a literal.
+        var asm = typeof(LeaderElectionDiagnostics).Assembly;
+        var info = asm.GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion;
+        string expected;
+        if (!string.IsNullOrEmpty(info))
+        {
+            var plus = info.IndexOf('+');
+            expected = plus >= 0 ? info[..plus] : info;
+        }
+        else
+        {
+            expected = asm.GetName().Version?.ToString(3) ?? "0.0.0";
+        }
+
+        using var diagnostics = new LeaderElectionDiagnostics();
+        var meterField = typeof(LeaderElectionDiagnostics).GetField(
+            "meter", BindingFlags.Instance | BindingFlags.NonPublic)
+            ?? throw new InvalidOperationException("LeaderElectionDiagnostics.meter field not found.");
+        var meter = (Meter)(meterField.GetValue(diagnostics)
+            ?? throw new InvalidOperationException("LeaderElectionDiagnostics.meter was null."));
+
+        Assert.False(string.IsNullOrEmpty(meter.Version));
+        Assert.Equal(expected, meter.Version);
     }
 
     [Fact]

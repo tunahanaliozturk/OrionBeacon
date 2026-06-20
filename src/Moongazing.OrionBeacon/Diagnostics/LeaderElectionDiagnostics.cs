@@ -19,7 +19,7 @@ public sealed class LeaderElectionDiagnostics : IDisposable
     /// <summary>Create the meter and its instruments.</summary>
     public LeaderElectionDiagnostics()
     {
-        meter = new Meter(MeterName, "0.1.0");
+        meter = new Meter(MeterName, MeterVersion.Value);
 
         Attempts = meter.CreateCounter<long>(
             "orionbeacon.attempts",
