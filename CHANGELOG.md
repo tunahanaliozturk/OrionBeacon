@@ -6,6 +6,17 @@ All notable changes to OrionBeacon are documented in this file. The format is ba
 [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and this project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.1] - 2026-06-20
+
+### Changed
+
+- The diagnostics meter version now derives automatically from the package version. The
+  `Moongazing.OrionBeacon` meter previously carried a hardcoded version literal that could drift from
+  the published package version; it now reads the assembly informational version (flowed from
+  `<Version>`) once at startup, so the two can no longer diverge.
+
+[0.2.1]: https://github.com/tunahanaliozturk/OrionBeacon/releases/tag/v0.2.1
+
 ## [0.2.0] - 2026-06-19
 
 ### Added
