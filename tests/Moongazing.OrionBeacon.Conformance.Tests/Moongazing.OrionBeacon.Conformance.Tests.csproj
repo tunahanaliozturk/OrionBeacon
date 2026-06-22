@@ -1,0 +1,26 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <IsPackable>false</IsPackable>
+    <GenerateDocumentationFile>false</GenerateDocumentationFile>
+    <!-- net10.0 only: the Redis run uses Testcontainers, which the family pins to a single modern
+         TFM. The reusable conformance base and the in-memory run live here too so both stores pass
+         the one suite; the in-memory store needs no Docker and runs everywhere the suite does. -->
+    <TargetFramework>net10.0</TargetFramework>
+    <TargetFrameworks></TargetFrameworks>
+    <!-- xunit fact names use snake_case for readability; CA1707 (no underscores) does not apply to tests. -->
+    <NoWarn>$(NoWarn);CA1707</NoWarn>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.11.1" />
+    <PackageReference Include="xunit" Version="2.9.2" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="2.8.2" />
+    <PackageReference Include="Testcontainers.Redis" Version="3.10.0" />
+  </ItemGroup>
+  <ItemGroup>
+    <Using Include="Xunit" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\Moongazing.OrionBeacon\Moongazing.OrionBeacon.csproj" />
+    <ProjectReference Include="..\..\src\Moongazing.OrionBeacon.Stores.Redis\Moongazing.OrionBeacon.Stores.Redis.csproj" />
+  </ItemGroup>
+</Project>
