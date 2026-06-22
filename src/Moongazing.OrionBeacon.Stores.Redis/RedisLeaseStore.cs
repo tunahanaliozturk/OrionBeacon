@@ -14,12 +14,22 @@ namespace Moongazing.OrionBeacon.Stores.Redis;
 /// </summary>
 /// <remarks>
 /// <para>
-/// Two keys back each resource. The lease itself is a hash at <c>{prefix}{resource}</c> with fields
-/// <c>holder</c>, <c>token</c>, and <c>acquired</c> (unix milliseconds), and it carries the lease
-/// TTL: when the holder stops renewing, Redis expires the hash and the lease lapses, letting a
-/// follower take over. The fencing token is a separate counter at <c>{prefix}{resource}:fence</c>
+/// Two keys back each resource. The lease itself is a hash at <c>{prefix}{{resource}}</c> with
+/// fields <c>holder</c>, <c>token</c>, and <c>acquired</c> (unix milliseconds), and it carries the
+/// lease TTL: when the holder stops renewing, Redis expires the hash and the lease lapses, letting a
+/// follower take over. The fencing token is a separate counter at <c>{prefix}{{resource}}:fence</c>
 /// that is never deleted, so the token a takeover receives is strictly greater than any term before
 /// it even though the lease hash came and went.
+/// </para>
+/// <para>
+/// Both keys wrap the resource in a Redis hash tag - the braces in <c>{{resource}}</c> - so a Redis
+/// Cluster hashes only the resource portion and routes the lease hash and the fencing counter to the
+/// same hash slot. Without that co-location the acquire-or-renew script, which touches both keys at
+/// once, is a cross-slot command and every acquire is rejected with <c>CROSSSLOT</c>, so no leader
+/// is ever elected on a cluster. The hash tag is inert on a single, non-clustered Redis, so
+/// single-node behaviour is byte-for-byte identical. The resource must not contain a brace itself
+/// (see <see cref="TryAcquireOrRenewAsync"/>), which keeps the injected tag the only braced section
+/// and therefore the one Redis hashes.
 /// </para>
 /// <para>
 /// Atomicity is the Redis server's: a Lua script runs to completion without interleaving other
@@ -73,17 +83,71 @@ return 0";
 
     private IDatabase Db => multiplexer.GetDatabase(options.Database);
 
-    private RedisKey LeaseKey(string resource) => options.KeyPrefix + resource;
+    private RedisKey LeaseKey(string resource) => BuildLeaseKey(options.KeyPrefix, resource);
 
-    private RedisKey FenceKey(string resource) => options.KeyPrefix + resource + ":fence";
+    private RedisKey FenceKey(string resource) => BuildFenceKey(options.KeyPrefix, resource);
+
+    /// <summary>
+    /// Builds the lease-hash key for <paramref name="resource"/> with the resource wrapped in a Redis
+    /// hash tag, so it co-locates on the same cluster slot as its fencing counter. Pure and allocation
+    /// -minimal so the two builders stay the single source of truth for key naming and are unit-testable
+    /// without a Redis connection.
+    /// </summary>
+    /// <param name="keyPrefix">The configured key prefix; placed outside the hash tag.</param>
+    /// <param name="resource">The resource name; the only braced (hashed) section of the key.</param>
+    /// <returns>The lease-hash key, e.g. <c>orionbeacon:lease:{jobs}</c>.</returns>
+    internal static RedisKey BuildLeaseKey(string keyPrefix, string resource)
+        => keyPrefix + HashTag(resource);
+
+    /// <summary>
+    /// Builds the fencing-counter key for <paramref name="resource"/>, sharing the identical hash tag
+    /// the lease key uses so a Redis Cluster routes both to the same slot and the two-key acquire-or
+    /// -renew script is never a cross-slot command.
+    /// </summary>
+    /// <param name="keyPrefix">The configured key prefix; placed outside the hash tag.</param>
+    /// <param name="resource">The resource name; the only braced (hashed) section of the key.</param>
+    /// <returns>The fencing-counter key, e.g. <c>orionbeacon:lease:{jobs}:fence</c>.</returns>
+    internal static RedisKey BuildFenceKey(string keyPrefix, string resource)
+        => keyPrefix + HashTag(resource) + ":fence";
+
+    /// <summary>
+    /// Wraps <paramref name="resource"/> in a Redis hash tag (<c>{resource}</c>). Because the resource
+    /// is validated to contain no brace, the wrapped form has exactly one <c>{</c>...<c>}</c> section
+    /// with a non-empty body, which is the section Redis Cluster hashes for slot placement.
+    /// </summary>
+    private static string HashTag(string resource) => "{" + resource + "}";
+
+    /// <summary>
+    /// Rejects a resource that contains a Redis hash-tag brace. The lease and fence keys co-locate by
+    /// wrapping the resource in <c>{</c>...<c>}</c>; a brace inside the resource would introduce a
+    /// second, earlier-or-empty tag that Redis Cluster would hash instead, silently breaking the
+    /// co-location and resurrecting the cross-slot failure. Rejecting is safer than stripping, which
+    /// would alias two distinct resources onto one key.
+    /// </summary>
+    /// <param name="resource">The already non-empty resource name to validate.</param>
+    /// <exception cref="ArgumentException">The resource contains <c>{</c> or <c>}</c>.</exception>
+    private static void ValidateResource(string resource)
+    {
+        if (resource.AsSpan().IndexOfAny('{', '}') >= 0)
+        {
+            throw new ArgumentException(
+                "Resource must not contain a '{' or '}' character; the store reserves braces to co-locate the lease and fencing keys on one Redis Cluster slot.",
+                nameof(resource));
+        }
+    }
 
     /// <inheritdoc />
+    /// <exception cref="ArgumentException">
+    /// <paramref name="resource"/> is empty, whitespace, or contains a <c>{</c> or <c>}</c> character,
+    /// which the store reserves to co-locate the lease and fencing keys on one Redis Cluster slot.
+    /// </exception>
     public async Task<LeaseAcquisition> TryAcquireOrRenewAsync(
         string resource, string candidateId, TimeSpan duration, CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
         ArgumentException.ThrowIfNullOrWhiteSpace(resource);
         ArgumentException.ThrowIfNullOrWhiteSpace(candidateId);
+        ValidateResource(resource);
         if (duration <= TimeSpan.Zero)
         {
             throw new ArgumentOutOfRangeException(nameof(duration), duration, "Lease duration must be positive.");
@@ -137,11 +201,16 @@ return 0";
     }
 
     /// <inheritdoc />
+    /// <exception cref="ArgumentException">
+    /// <paramref name="resource"/> is empty, whitespace, or contains a <c>{</c> or <c>}</c> character,
+    /// which the store reserves to co-locate the lease and fencing keys on one Redis Cluster slot.
+    /// </exception>
     public async Task ReleaseAsync(string resource, string candidateId, CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
         ArgumentException.ThrowIfNullOrWhiteSpace(resource);
         ArgumentException.ThrowIfNullOrWhiteSpace(candidateId);
+        ValidateResource(resource);
 
         await Db.ScriptEvaluateAsync(
             ReleaseScript,

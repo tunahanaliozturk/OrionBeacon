@@ -8,10 +8,12 @@ namespace Moongazing.OrionBeacon.Stores.Redis;
 public sealed class RedisLeaseStoreOptions
 {
     /// <summary>
-    /// The prefix applied to every key the store writes. A resource named <c>jobs</c> with the
-    /// default prefix is stored at <c>orionbeacon:lease:jobs</c> (the lease hash) and
-    /// <c>orionbeacon:lease:jobs:fence</c> (the fencing-token counter). Default
-    /// <c>orionbeacon:lease:</c>.
+    /// The prefix applied to every key the store writes. The resource is wrapped in a Redis hash tag
+    /// (braces) so the lease hash and its fencing counter co-locate on one cluster slot, so a resource
+    /// named <c>jobs</c> with the default prefix is stored at <c>orionbeacon:lease:{jobs}</c> (the
+    /// lease hash) and <c>orionbeacon:lease:{jobs}:fence</c> (the fencing-token counter). The prefix
+    /// itself sits outside the braces, so keep it brace-free or the hash tag the store relies on would
+    /// no longer be the first braced section. Default <c>orionbeacon:lease:</c>.
     /// </summary>
     public string KeyPrefix { get; set; } = "orionbeacon:lease:";
 

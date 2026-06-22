@@ -12,6 +12,12 @@
     <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="9.0.0" />
   </ItemGroup>
   <ItemGroup>
+    <!-- The conformance suite white-box tests the key builders (hash-tag co-location) directly, so it
+         needs the internal static key-naming helpers; the key strings are not observable through the
+         public ILeaseStore surface. -->
+    <InternalsVisibleTo Include="Moongazing.OrionBeacon.Conformance.Tests" />
+  </ItemGroup>
+  <ItemGroup>
     <ProjectReference Include="..\Moongazing.OrionBeacon\Moongazing.OrionBeacon.csproj" />
   </ItemGroup>
 </Project>
