@@ -6,6 +6,35 @@ All notable changes to OrionBeacon are documented in this file. The format is ba
 [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and this project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.0] - 2026-06-22
+
+### Added
+
+- New package **OrionBeacon.Stores.Redis** (`Moongazing.OrionBeacon.Stores.Redis`): a Redis-backed
+  `ILeaseStore` that elects a leader across a cluster. Acquire-or-renew is one atomic server-side Lua
+  script, never a read-then-write, so two candidates can never both acquire. If there is no current
+  leader (the lease key is absent or has expired) the caller becomes leader and the fencing token
+  advances; if the caller already holds the lease it is renewed and the token does not change; if a
+  different candidate holds a live lease the caller is denied. The fencing token is a persistent
+  Redis counter advanced inside the same script, so it is strictly increasing across leadership
+  changes (including takeover after a dead leader's lease expires) and stable across a renew. The
+  lease is a hash carrying a TTL, so a dead leader's lease lapses and a follower takes over, and
+  release is fencing-checked so only the holder can release. Register it with
+  `AddOrionBeaconRedisStore(...)` before `AddOrionBeacon()`. Depends only on `StackExchange.Redis`
+  and `Microsoft.Extensions.DependencyInjection.Abstractions`; the core's single dependency is
+  unchanged.
+- A shared **`ILeaseStore` conformance suite** (`LeaseStoreConformanceTests`): a reusable abstract
+  xUnit base that asserts the contract every store must satisfy: exactly one leader under concurrent
+  acquires, a fencing token that strictly increases on each leadership change and is stable across a
+  renew, lease expiry letting a new leader take over, and fencing-checked release. Both the in-memory
+  store and the Redis store run through it; the in-memory store passing it validates the suite, and
+  the Redis run executes against a real Redis via Testcontainers.
+- `LeaseAcquisition.Acquired`, `Renewed`, and `Denied` are now public, so an `ILeaseStore`
+  implemented outside the core assembly (such as the Redis store, or a third-party store) can build
+  a result. The factories validate their arguments. No existing behaviour changes.
+
+[0.3.0]: https://github.com/tunahanaliozturk/OrionBeacon/releases/tag/v0.3.0
+
 ## [0.2.1] - 2026-06-20
 
 ### Changed

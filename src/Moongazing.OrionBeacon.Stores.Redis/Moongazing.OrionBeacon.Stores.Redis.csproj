@@ -1,0 +1,17 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <PackageId>OrionBeacon.Stores.Redis</PackageId>
+    <RootNamespace>Moongazing.OrionBeacon.Stores.Redis</RootNamespace>
+    <Description>Redis-backed ILeaseStore for OrionBeacon leader election. Acquire-or-renew is a single atomic Lua script and the fencing token is a Redis counter advanced in the same script, so two candidates can never both acquire and the token strictly increases across every leadership change.</Description>
+    <PackageTags>leader-election;leadership;lease;fencing-token;redis;coordination;orion</PackageTags>
+    <!-- Ship this package's own README to NuGet instead of the repository root one. -->
+    <PackageReadmeSource>$(MSBuildThisFileDirectory)README.md</PackageReadmeSource>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="StackExchange.Redis" Version="2.8.16" />
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="9.0.0" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\Moongazing.OrionBeacon\Moongazing.OrionBeacon.csproj" />
+  </ItemGroup>
+</Project>

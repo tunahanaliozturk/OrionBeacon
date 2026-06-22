@@ -2,11 +2,16 @@
 
 OrionBeacon is leader election for .NET: candidates compete for a renewable lease in a shared store, the holder is the leader, and fencing tokens keep a stale leader from writing as if it were still in charge.
 
-Current release: **0.2.1**.
+Current release: **0.3.0**.
 
 The version milestones below are directions, not commitments. Dates are targets and will move. The guiding constraint is unchanged: keep the core small and dependency-light, push anything that needs a database or a broker into its own opt-in package, and do not reimplement consensus. If an item matters to you, an issue saying so is the best way to move it up.
 
 ## Released
+
+### 0.3.0 - 2026-06-22
+
+- A Redis-backed `ILeaseStore` shipped as its own package, **OrionBeacon.Stores.Redis**. Acquire-or-renew is one atomic server-side Lua script, so two candidates can never both acquire, and the fencing token is a persistent Redis counter advanced in the same script, so it strictly increases across leadership changes and is stable across a renew. The lease is a TTL-bearing key, so a dead leader's lease lapses and a follower takes over, and release is fencing-checked. The core's single dependency is unchanged; the store depends only on `StackExchange.Redis`.
+- A shared `ILeaseStore` conformance suite: a reusable abstract test base that asserts the contract every store must satisfy (one leader under concurrent acquires, a strictly increasing fencing token that is stable across a renew, expiry-driven takeover, fencing-checked release). Both the in-memory store and the Redis store run through it, so any store, including a third-party one, can prove it conforms.
 
 ### 0.2.1 - 2026-06-20
 
@@ -24,14 +29,9 @@ Initial release: the `ILeaderElector` acquire-or-renew state machine, the `Leade
 
 ## Next
 
-### 0.3.0 - distributed lease stores (target 2026 Q3)
+### A relational lease store (target 2026 Q3)
 
-`ILeaseStore` exists so the core stays storage-agnostic; the obvious next step is shipping real shared stores as separate packages, each keeping the core's single dependency:
-
-- A Redis-backed `ILeaseStore`, with atomic acquire-or-renew expressed as one server-side script so two candidates cannot both acquire.
-- A relational `ILeaseStore` (Postgres, SQL Server) using a single leader row and conditional updates.
-
-Each store must honor the two existing contract rules: `TryAcquireOrRenewAsync` is atomic, and a strictly increasing fencing token is assigned on every new acquisition. A shared conformance test suite would let any store, including a third-party one, prove it satisfies them.
+The Redis store shipped in 0.3.0 alongside the shared conformance suite. The remaining distributed-store work is a relational `ILeaseStore` (Postgres, SQL Server) using a single leader row and conditional updates, kept in its own package so the core stays storage-agnostic and dependency-light. It must honor the same two contract rules the Redis store does, `TryAcquireOrRenewAsync` is atomic and a strictly increasing fencing token is assigned on every new acquisition, and it will prove it by passing the same conformance suite.
 
 ### 0.4.0 - leadership-change events and readiness (target 2026 Q4)
 

@@ -4,9 +4,10 @@ using Moongazing.OrionBeacon.Leasing;
 
 using Xunit;
 
-// LeaseAcquisition's Acquired/Renewed/Denied factories are internal with no InternalsVisibleTo to
-// the test assembly, so they are exercised through the public InMemoryLeaseStore, which is their
-// only supported call site. This keeps assertions on real, reachable behavior.
+// LeaseAcquisition's Acquired/Renewed/Denied factories are public so an out-of-assembly ILeaseStore
+// (for example the Redis store) can build a result; these tests still exercise them through the
+// public InMemoryLeaseStore so the assertions hold on real, reachable behavior rather than a
+// hand-built result.
 public sealed class LeaseAcquisitionTests
 {
     private static readonly TimeSpan Lease = TimeSpan.FromSeconds(15);

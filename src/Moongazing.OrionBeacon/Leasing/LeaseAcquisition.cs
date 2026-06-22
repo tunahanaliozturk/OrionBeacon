@@ -44,9 +44,40 @@ public sealed class LeaseAcquisition
     /// <summary>True when the caller now holds the lease.</summary>
     public bool IsHeld => Outcome is LeaseOutcome.Acquired or LeaseOutcome.Renewed;
 
-    internal static LeaseAcquisition Acquired(Lease lease) => new(LeaseOutcome.Acquired, lease, lease.HolderId);
+    /// <summary>
+    /// The caller took a free or expired lease and a new leadership term began. An
+    /// <see cref="ILeaseStore"/> implementation returns this when it grants the lease to a candidate
+    /// that did not previously hold it, carrying the new <paramref name="lease"/> and its freshly
+    /// advanced fencing token.
+    /// </summary>
+    /// <param name="lease">The lease the caller now holds.</param>
+    public static LeaseAcquisition Acquired(Lease lease)
+    {
+        ArgumentNullException.ThrowIfNull(lease);
+        return new(LeaseOutcome.Acquired, lease, lease.HolderId);
+    }
 
-    internal static LeaseAcquisition Renewed(Lease lease) => new(LeaseOutcome.Renewed, lease, lease.HolderId);
+    /// <summary>
+    /// The caller already held the lease and its term was extended. An <see cref="ILeaseStore"/>
+    /// implementation returns this when the current holder renews; the fencing token on
+    /// <paramref name="lease"/> is unchanged from the term it already held.
+    /// </summary>
+    /// <param name="lease">The renewed lease, carrying the same fencing token as the held term.</param>
+    public static LeaseAcquisition Renewed(Lease lease)
+    {
+        ArgumentNullException.ThrowIfNull(lease);
+        return new(LeaseOutcome.Renewed, lease, lease.HolderId);
+    }
 
-    internal static LeaseAcquisition Denied(string holderId) => new(LeaseOutcome.Denied, null, holderId);
+    /// <summary>
+    /// A different candidate holds an unexpired lease, so the caller is a follower. An
+    /// <see cref="ILeaseStore"/> implementation returns this when it cannot grant the lease,
+    /// reporting the current <paramref name="holderId"/>.
+    /// </summary>
+    /// <param name="holderId">The candidate that currently holds the lease.</param>
+    public static LeaseAcquisition Denied(string holderId)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(holderId);
+        return new(LeaseOutcome.Denied, null, holderId);
+    }
 }
