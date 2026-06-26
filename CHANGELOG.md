@@ -6,6 +6,36 @@ All notable changes to OrionBeacon are documented in this file. The format is ba
 [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and this project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.0] - 2026-06-27
+
+### Added
+
+- New package **OrionBeacon.Stores.Relational** (`Moongazing.OrionBeacon.Stores.Relational`): a
+  relational `ILeaseStore` over PostgreSQL or SQL Server that elects a leader across a cluster from a
+  single leader row per resource. Acquire-or-renew is one atomic conditional upsert, never a
+  read-then-write, so two candidates can never both acquire: on PostgreSQL an
+  `INSERT ... ON CONFLICT (resource) DO UPDATE ... WHERE (holder = @me OR expired) RETURNING`, and on
+  SQL Server a `MERGE ... WITH (HOLDLOCK) ... OUTPUT`. If there is no current leader (no row, or the
+  row's lease has expired) the caller becomes leader and the fencing token advances by one; if the
+  caller already holds the lease it is renewed and the token does not change; if a different candidate
+  holds a live lease the caller is denied and told who holds it. The fencing token is a `bigint` column
+  carried on the row and is never reset, so it is strictly increasing across leadership changes
+  (including takeover after a dead leader's lease expires) and stable across a renew. Liveness is judged
+  by the database clock (`now()` / `SYSUTCDATETIME()`), so candidates with skewed wall clocks still
+  agree on whether a lease is live. The lease has an expiry timestamp so a dead leader's lease lapses
+  and a follower takes over, release is fencing-checked so only the holder can release, and the initial
+  insert race between two nodes creating the first row is resolved by the primary key inside the atomic
+  upsert. Register it with `AddOrionBeaconPostgresStore(...)` or `AddOrionBeaconSqlServerStore(...)`
+  before `AddOrionBeacon()`. Depends only on `Npgsql`, `Microsoft.Data.SqlClient`, and
+  `Microsoft.Extensions.DependencyInjection.Abstractions`; the core's single dependency is unchanged.
+- The shared **`ILeaseStore` conformance suite** now runs the relational store against a real
+  PostgreSQL and a real SQL Server via Testcontainers, alongside the existing in-memory and Redis runs,
+  so both relational dialects prove the same contract: exactly one leader under concurrent acquires, a
+  fencing token that strictly increases on each leadership change and is stable across a renew, lease
+  expiry letting a new leader take over, and fencing-checked release.
+
+[0.4.0]: https://github.com/tunahanaliozturk/OrionBeacon/releases/tag/v0.4.0
+
 ## [0.3.0] - 2026-06-22
 
 ### Added

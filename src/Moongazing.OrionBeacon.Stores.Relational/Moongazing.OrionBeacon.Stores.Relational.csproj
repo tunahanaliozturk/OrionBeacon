@@ -1,0 +1,24 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <PackageId>OrionBeacon.Stores.Relational</PackageId>
+    <RootNamespace>Moongazing.OrionBeacon.Stores.Relational</RootNamespace>
+    <Description>Relational (PostgreSQL and SQL Server) ILeaseStore for OrionBeacon leader election. A single leader row per resource, with acquire-or-renew as one atomic conditional upsert (INSERT ... ON CONFLICT ... RETURNING on Postgres, MERGE ... OUTPUT on SQL Server), so two candidates can never both acquire and the fencing token strictly increases across every leadership change.</Description>
+    <PackageTags>leader-election;leadership;lease;fencing-token;postgres;postgresql;sql-server;coordination;orion</PackageTags>
+    <!-- Ship this package's own README to NuGet instead of the repository root one. -->
+    <PackageReadmeSource>$(MSBuildThisFileDirectory)README.md</PackageReadmeSource>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Npgsql" Version="8.0.6" />
+    <PackageReference Include="Microsoft.Data.SqlClient" Version="5.2.2" />
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="9.0.0" />
+  </ItemGroup>
+  <ItemGroup>
+    <!-- The conformance suite white-box tests the SQL builders (atomic upsert, fencing-checked release)
+         and the identifier validation directly, so it needs the internal dialect helpers; the SQL text
+         is not observable through the public ILeaseStore surface. -->
+    <InternalsVisibleTo Include="Moongazing.OrionBeacon.Conformance.Tests" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\Moongazing.OrionBeacon\Moongazing.OrionBeacon.csproj" />
+  </ItemGroup>
+</Project>
