@@ -2,11 +2,25 @@
 
 OrionBeacon is leader election for .NET: candidates compete for a renewable lease in a shared store, the holder is the leader, and fencing tokens keep a stale leader from writing as if it were still in charge.
 
-Current release: **0.3.0**.
+Current release: **0.4.0**.
 
 The version milestones below are directions, not commitments. Dates are targets and will move. The guiding constraint is unchanged: keep the core small and dependency-light, push anything that needs a database or a broker into its own opt-in package, and do not reimplement consensus. If an item matters to you, an issue saying so is the best way to move it up.
 
 ## Released
+
+### 0.4.0 - 2026-06-27
+
+- A relational `ILeaseStore` shipped as its own package, **OrionBeacon.Stores.Relational**, over both
+  PostgreSQL and SQL Server. A single leader row per resource holds the holder, the fencing token, and
+  the lease expiry, and acquire-or-renew is one atomic conditional upsert, never a read-then-write: an
+  `INSERT ... ON CONFLICT ... RETURNING` on Postgres and a `MERGE ... WITH (HOLDLOCK) ... OUTPUT` on
+  SQL Server, so two candidates can never both acquire. The fencing token is a `bigint` column that is
+  never reset, advanced by one on each new term and left unchanged on a renew, so it strictly increases
+  across leadership changes and is stable across a renew. Liveness is judged by the database clock, the
+  lease has a TTL so a dead leader's lease lapses, release is fencing-checked, and the initial insert
+  race is resolved by the primary key inside the upsert. It proves the contract by passing the same
+  shared conformance suite against a real PostgreSQL and a real SQL Server via Testcontainers. The
+  core's single dependency is unchanged.
 
 ### 0.3.0 - 2026-06-22
 
@@ -29,17 +43,13 @@ Initial release: the `ILeaderElector` acquire-or-renew state machine, the `Leade
 
 ## Next
 
-### A relational lease store (target 2026 Q3)
-
-The Redis store shipped in 0.3.0 alongside the shared conformance suite. The remaining distributed-store work is a relational `ILeaseStore` (Postgres, SQL Server) using a single leader row and conditional updates, kept in its own package so the core stays storage-agnostic and dependency-light. It must honor the same two contract rules the Redis store does, `TryAcquireOrRenewAsync` is atomic and a strictly increasing fencing token is assigned on every new acquisition, and it will prove it by passing the same conformance suite.
-
-### 0.4.0 - leadership-change events and readiness (target 2026 Q4)
+### 0.5.0 - leadership-change events and readiness (target 2026 Q4)
 
 - An async leadership hook. Today `ILeadershipObserver` is synchronous and observability-only. An opt-in async surface (or a "run this delegate only while leadership is held, and cancel it on deposition" wrapper) covers the common case of starting and stopping real work on a transition without each consumer writing the same plumbing.
 - An `IHealthCheck` that reports this instance's leadership state, so leader-gated work can be surfaced to readiness probes and orchestrators without consumers polling `IsLeader` themselves.
 - A read-only peek on `ILeaseStore` to report the current holder and fencing token without contending for the lease, which the health check and diagnostics can both read from.
 
-### 0.5.0 - multiple independent elections in one process (target 2027 Q1)
+### 0.6.0 - multiple independent elections in one process (target 2027 Q1)
 
 Registration today assumes one elected resource per application: a single `LeaderElectionOptions`, one elector, one hosted loop. A keyed or named registration that elects several independent resources side by side, each with its own resource name, options, elector, and lease store, would suit an app that coordinates more than one "only one node does this" responsibility. This is an additive API; the single-resource `AddOrionBeacon()` stays as the simple default.
 
