@@ -64,12 +64,18 @@ public sealed class RelationalLeaseStore : ILeaseStore
         this.options = options;
         dialect = RelationalDialect.For(options.Provider);
         quotedTable = dialect.QuoteTable(options.TableName);
-        commandTimeoutSeconds = checked((int)Math.Ceiling(options.CommandTimeout.TotalSeconds));
-        if (commandTimeoutSeconds < 0)
+
+        // A zero or negative command timeout is rejected outright. In ADO.NET CommandTimeout = 0 means
+        // "wait forever", which would let a single hung command stall the elector's renew loop with no
+        // bound, the opposite of what a timeout is for. Require a positive duration. Round up so a
+        // sub-second positive timeout is at least one second rather than flooring to zero ("infinite").
+        if (options.CommandTimeout <= TimeSpan.Zero)
         {
             throw new ArgumentOutOfRangeException(
-                nameof(options), options.CommandTimeout, "Command timeout must not be negative.");
+                nameof(options), options.CommandTimeout, "Command timeout must be a positive duration.");
         }
+
+        commandTimeoutSeconds = checked((int)Math.Ceiling(options.CommandTimeout.TotalSeconds));
     }
 
     /// <inheritdoc />
@@ -84,7 +90,19 @@ public sealed class RelationalLeaseStore : ILeaseStore
             throw new ArgumentOutOfRangeException(nameof(duration), duration, "Lease duration must be positive.");
         }
 
-        var ttlSeconds = duration.TotalSeconds;
+        // Whole milliseconds so a sub-second lease (for example 1500 ms) is honoured exactly rather than
+        // truncated to seconds by the engine's interval arithmetic. Round up so a fractional millisecond
+        // never floors a positive lease toward zero. SQL Server's DATEADD takes a 32-bit count, so an
+        // overlong lease (beyond ~24.8 days) is rejected rather than silently overflowing.
+        var totalMilliseconds = Math.Ceiling(duration.TotalMilliseconds);
+        if (totalMilliseconds > int.MaxValue)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(duration), duration,
+                $"Lease duration must not exceed {int.MaxValue} milliseconds (about 24.8 days).");
+        }
+
+        var ttlMilliseconds = (int)totalMilliseconds;
 
         await using var connection = await OpenAsync(cancellationToken).ConfigureAwait(false);
 
@@ -92,7 +110,7 @@ public sealed class RelationalLeaseStore : ILeaseStore
         {
             AddParameter(command, RelationalParameters.Resource, resource);
             AddParameter(command, RelationalParameters.Holder, candidateId);
-            AddParameter(command, RelationalParameters.TtlSeconds, ttlSeconds);
+            AddParameter(command, RelationalParameters.TtlMilliseconds, ttlMilliseconds);
 
             await using var reader = await command.ExecuteReaderAsync(
                 CommandBehavior.SingleRow, cancellationToken).ConfigureAwait(false);
@@ -213,5 +231,5 @@ internal static class RelationalParameters
 {
     public const string Resource = "resource";
     public const string Holder = "holder";
-    public const string TtlSeconds = "ttl_seconds";
+    public const string TtlMilliseconds = "ttl_ms";
 }

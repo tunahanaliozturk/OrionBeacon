@@ -27,7 +27,7 @@ The initial race between two nodes inserting the very first leader row is resolv
 
 ## Install
 
-```
+```bash
 dotnet add package OrionBeacon.Stores.Relational
 ```
 

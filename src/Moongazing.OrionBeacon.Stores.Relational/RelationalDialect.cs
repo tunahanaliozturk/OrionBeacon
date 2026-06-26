@@ -47,6 +47,9 @@ internal abstract class RelationalDialect
     {
         RelationalProvider.Postgres => PostgresInstance,
         RelationalProvider.SqlServer => SqlServerInstance,
+        RelationalProvider.Unspecified => throw new ArgumentOutOfRangeException(
+            nameof(provider), provider,
+            $"{nameof(RelationalLeaseStoreOptions)}.{nameof(RelationalLeaseStoreOptions.Provider)} must be set to a specific engine; it was left unspecified."),
         _ => throw new ArgumentOutOfRangeException(nameof(provider), provider, "Unknown relational provider."),
     };
 
@@ -59,8 +62,12 @@ internal abstract class RelationalDialect
     /// <summary>The parameter name for the candidate identity.</summary>
     protected const string Holder = RelationalParameters.Holder;
 
-    /// <summary>The parameter name for the lease duration, in seconds.</summary>
-    protected const string TtlSeconds = RelationalParameters.TtlSeconds;
+    /// <summary>
+    /// The parameter name for the lease duration, in whole milliseconds. Milliseconds, not seconds, so a
+    /// sub-second lease (for example 1500 ms) is honoured exactly rather than truncated to whole seconds
+    /// by the engine's interval arithmetic.
+    /// </summary>
+    protected const string TtlMilliseconds = RelationalParameters.TtlMilliseconds;
 
     /// <summary>
     /// Validates <paramref name="tableName"/> as a plain identifier and returns it quoted for the
@@ -125,7 +132,14 @@ internal abstract class RelationalDialect
     {
         protected override string QuoteIdentifier(string identifier) => "\"" + identifier + "\"";
 
+        // CREATE TABLE IF NOT EXISTS is idempotent, but its existence check and the catalog insert are
+        // not atomic against another session creating the same table at the same instant, so two nodes
+        // racing the first bootstrap can still collide on a pg_type unique index ("duplicate key value
+        // violates unique constraint"). A transaction-scoped advisory lock serialises the bootstrap so
+        // one node creates the table while the other waits and then finds it present; the lock is keyed
+        // by a hash of the table name and released automatically when the implicit transaction commits.
         public override string CreateTableSql(string quotedTable) => $@"
+SELECT pg_advisory_xact_lock(hashtext('orionbeacon_lease_bootstrap_{quotedTable}'));
 CREATE TABLE IF NOT EXISTS {quotedTable} (
     resource      text                     NOT NULL PRIMARY KEY,
     holder        text                     NOT NULL,
@@ -150,7 +164,7 @@ WITH prior AS (
 ),
 upsert AS (
     INSERT INTO {quotedTable} (resource, holder, fencing_token, acquired_at, expires_at)
-    VALUES (@{Resource}, @{Holder}, 1, now(), now() + make_interval(secs => @{TtlSeconds}))
+    VALUES (@{Resource}, @{Holder}, 1, now(), now() + (@{TtlMilliseconds} * interval '1 millisecond'))
     ON CONFLICT (resource) DO UPDATE SET
         holder = @{Holder},
         fencing_token = CASE
@@ -161,7 +175,7 @@ upsert AS (
             WHEN {quotedTable}.holder = @{Holder} AND {quotedTable}.expires_at > now()
             THEN {quotedTable}.acquired_at
             ELSE now() END,
-        expires_at = now() + make_interval(secs => @{TtlSeconds})
+        expires_at = now() + (@{TtlMilliseconds} * interval '1 millisecond')
     WHERE {quotedTable}.holder = @{Holder} OR {quotedTable}.expires_at <= now()
     RETURNING fencing_token, acquired_at, expires_at
 )
@@ -189,16 +203,47 @@ WHERE resource = @{Resource} AND expires_at > now();";
     {
         protected override string QuoteIdentifier(string identifier) => "[" + identifier + "]";
 
+        // IF OBJECT_ID(...) IS NULL ... CREATE TABLE is a check-then-act: two nodes bootstrapping at
+        // once can both see no table and both issue CREATE, so the loser fails with "There is already an
+        // object named ...". A session-scoped application lock (sp_getapplock) serialises the bootstrap
+        // so only one node creates the table while the other waits and then finds it present; the lock is
+        // released explicitly and, as a session lock, also released when the connection closes. The
+        // OBJECT_ID guard remains so the create is a no-op on the common already-exists path before the
+        // lock is even taken on subsequent calls.
         public override string CreateTableSql(string quotedTable) => $@"
 IF OBJECT_ID(N'{quotedTable}', N'U') IS NULL
 BEGIN
-    CREATE TABLE {quotedTable} (
-        resource      nvarchar(450)    NOT NULL PRIMARY KEY,
-        holder        nvarchar(450)    NOT NULL,
-        fencing_token bigint           NOT NULL,
-        acquired_at   datetimeoffset(7) NOT NULL,
-        expires_at    datetimeoffset(7) NOT NULL
-    );
+    DECLARE @lock int;
+    EXEC @lock = sp_getapplock
+        @Resource = N'orionbeacon_lease_bootstrap_{quotedTable}',
+        @LockMode = N'Exclusive',
+        @LockOwner = N'Session',
+        @LockTimeout = 30000;
+    IF @lock < 0
+        THROW 50000, N'Could not acquire the OrionBeacon schema bootstrap lock.', 1;
+
+    BEGIN TRY
+        IF OBJECT_ID(N'{quotedTable}', N'U') IS NULL
+        BEGIN
+            CREATE TABLE {quotedTable} (
+                resource      nvarchar(450)    NOT NULL PRIMARY KEY,
+                holder        nvarchar(450)    NOT NULL,
+                fencing_token bigint           NOT NULL,
+                acquired_at   datetimeoffset(7) NOT NULL,
+                expires_at    datetimeoffset(7) NOT NULL
+            );
+        END;
+    END TRY
+    BEGIN CATCH
+        EXEC sp_releaseapplock
+            @Resource = N'orionbeacon_lease_bootstrap_{quotedTable}',
+            @LockOwner = N'Session';
+        THROW;
+    END CATCH;
+
+    EXEC sp_releaseapplock
+        @Resource = N'orionbeacon_lease_bootstrap_{quotedTable}',
+        @LockOwner = N'Session';
 END;";
 
         // MERGE with HOLDLOCK is SQL Server's atomic upsert: HOLDLOCK takes a range lock on the key so
@@ -225,10 +270,10 @@ WHEN MATCHED AND (target.holder = @{Holder} OR target.expires_at <= SYSUTCDATETI
             WHEN target.holder = @{Holder} AND target.expires_at > SYSUTCDATETIME()
             THEN target.acquired_at
             ELSE SYSUTCDATETIME() END,
-        expires_at = DATEADD(SECOND, @{TtlSeconds}, SYSUTCDATETIME())
+        expires_at = DATEADD(MILLISECOND, @{TtlMilliseconds}, SYSUTCDATETIME())
 WHEN NOT MATCHED THEN
     INSERT (resource, holder, fencing_token, acquired_at, expires_at)
-    VALUES (@{Resource}, @{Holder}, 1, SYSUTCDATETIME(), DATEADD(SECOND, @{TtlSeconds}, SYSUTCDATETIME()))
+    VALUES (@{Resource}, @{Holder}, 1, SYSUTCDATETIME(), DATEADD(MILLISECOND, @{TtlMilliseconds}, SYSUTCDATETIME()))
 OUTPUT
     inserted.fencing_token,
     inserted.acquired_at,

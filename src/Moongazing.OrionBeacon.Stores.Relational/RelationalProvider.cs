@@ -8,9 +8,17 @@ namespace Moongazing.OrionBeacon.Stores.Relational;
 /// </summary>
 public enum RelationalProvider
 {
+    /// <summary>
+    /// No engine chosen. The default value, present only so that leaving
+    /// <see cref="RelationalLeaseStoreOptions.Provider"/> unset is a detectable error rather than
+    /// silently selecting an engine: the store rejects this value at construction. Never select it
+    /// deliberately.
+    /// </summary>
+    Unspecified = 0,
+
     /// <summary>PostgreSQL, reached through <c>Npgsql</c>.</summary>
-    Postgres,
+    Postgres = 1,
 
     /// <summary>Microsoft SQL Server, reached through <c>Microsoft.Data.SqlClient</c>.</summary>
-    SqlServer,
+    SqlServer = 2,
 }

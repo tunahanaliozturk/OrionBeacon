@@ -61,4 +61,48 @@ public sealed class RelationalDialectTests
                 TableName = "orionbeacon_leases",
             }));
     }
+
+    [Fact]
+    public void Omitting_the_provider_is_rejected()
+    {
+        // The default RelationalProvider is Unspecified, so leaving Provider unset must fail at
+        // construction rather than silently selecting an engine that could mismatch the connection.
+        var options = new RelationalLeaseStoreOptions { TableName = "orionbeacon_leases" };
+        Assert.Equal(RelationalProvider.Unspecified, options.Provider);
+
+        Assert.Throws<ArgumentOutOfRangeException>(() => new RelationalLeaseStore(NoConnection, options));
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(-1)]
+    [InlineData(-30)]
+    public void A_non_positive_command_timeout_is_rejected(int seconds)
+    {
+        // CommandTimeout = 0 means "wait forever" in ADO.NET, so a zero (or negative) timeout must be
+        // rejected rather than quietly becoming an unbounded wait.
+        Assert.Throws<ArgumentOutOfRangeException>(() => new RelationalLeaseStore(
+            NoConnection,
+            new RelationalLeaseStoreOptions
+            {
+                Provider = RelationalProvider.Postgres,
+                TableName = "orionbeacon_leases",
+                CommandTimeout = TimeSpan.FromSeconds(seconds),
+            }));
+    }
+
+    [Fact]
+    public void A_positive_command_timeout_is_accepted()
+    {
+        var store = new RelationalLeaseStore(
+            NoConnection,
+            new RelationalLeaseStoreOptions
+            {
+                Provider = RelationalProvider.Postgres,
+                TableName = "orionbeacon_leases",
+                CommandTimeout = TimeSpan.FromSeconds(5),
+            });
+
+        Assert.NotNull(store);
+    }
 }

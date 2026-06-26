@@ -119,7 +119,16 @@ internal static class RelationalContainerStartup
         while (sw.Elapsed < budget)
         {
             attempt++;
-            using var cts = new CancellationTokenSource(budget - sw.Elapsed);
+
+            // Guard the remaining budget before creating the CTS: between the loop condition and here the
+            // clock can cross the budget, and CancellationTokenSource throws on a non-positive delay.
+            var perAttemptBudget = budget - sw.Elapsed;
+            if (perAttemptBudget <= TimeSpan.Zero)
+            {
+                break;
+            }
+
+            using var cts = new CancellationTokenSource(perAttemptBudget);
             try
             {
                 // StartAsync is idempotent once started, so retrying after a warm-up failure is safe and

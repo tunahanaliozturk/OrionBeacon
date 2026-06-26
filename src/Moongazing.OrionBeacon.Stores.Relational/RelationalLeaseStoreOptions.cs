@@ -10,9 +10,13 @@ public sealed class RelationalLeaseStoreOptions
     /// <summary>
     /// The relational engine the supplied connection talks to. This selects the SQL dialect for the
     /// atomic acquire-or-renew and release statements; there is no autodetection, so it must match the
-    /// connection. No default: it is a required, deliberate choice.
+    /// connection. There is no usable default: the value starts at
+    /// <see cref="RelationalProvider.Unspecified"/> and the store rejects that at construction, so the
+    /// engine is a required, deliberate choice rather than a silently-defaulted one that could target the
+    /// wrong dialect. The <c>AddOrionBeaconPostgresStore</c> and <c>AddOrionBeaconSqlServerStore</c>
+    /// registration helpers set it for you.
     /// </summary>
-    public RelationalProvider Provider { get; set; }
+    public RelationalProvider Provider { get; set; } = RelationalProvider.Unspecified;
 
     /// <summary>
     /// The unquoted table name that holds one leader row per resource. Defaults to
