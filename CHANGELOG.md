@@ -59,6 +59,7 @@ All notable changes to OrionBeacon are documented in this file. The format is ba
   fencing token that strictly increases on each leadership change and is stable across a renew, lease
   expiry letting a new leader take over, and fencing-checked release.
 
+[0.5.0]: https://github.com/tunahanaliozturk/OrionBeacon/releases/tag/v0.5.0
 [0.4.0]: https://github.com/tunahanaliozturk/OrionBeacon/releases/tag/v0.4.0
 
 ## [0.3.0] - 2026-06-22

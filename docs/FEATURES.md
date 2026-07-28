@@ -72,4 +72,4 @@ It is a disposable singleton; disposing it releases the meter. Subscribe with an
 
 ## Targets and dependencies
 
-Multi-targets `net8.0`, `net9.0`, and `net10.0`. The single package reference is `Microsoft.Extensions.Hosting.Abstractions`. Built with nullable reference types, `TreatWarningsAsErrors`, the latest analyzers, and a generated XML documentation file.
+Multi-targets `net8.0`, `net9.0`, and `net10.0`. The package references are `Microsoft.Extensions.Hosting.Abstractions` and `Orion.Abstractions` (the family's shared contracts spine, which supplies the `OrionInstrumentation` telemetry base). Built with nullable reference types, `TreatWarningsAsErrors`, the latest analyzers, and a generated XML documentation file.
