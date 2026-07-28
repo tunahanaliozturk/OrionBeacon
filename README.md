@@ -159,9 +159,9 @@ builder.Services.AddOrionBeacon();
 
 OrionBeacon exposes a `System.Diagnostics.Metrics.Meter` named `Moongazing.OrionBeacon` (the constant `LeaderElectionDiagnostics.MeterName`). Subscribe to it from OpenTelemetry:
 
-- `orionbeacon.attempts` (counter, tagged `outcome` = `acquired` / `renewed` / `denied`) - lease acquisition attempts.
-- `orionbeacon.transitions` (counter, tagged `direction` = `elected` / `deposed`) - leadership transitions.
-- `orionbeacon.is_leader` (observable gauge) - `1` while this candidate holds leadership, otherwise `0`.
+- `orion.beacon.attempts` (counter, tagged `orion.outcome` = `acquired` / `renewed` / `denied`) - lease acquisition attempts.
+- `orion.beacon.transitions` (counter, tagged `direction` = `elected` / `deposed`) - leadership transitions.
+- `orion.beacon.is_leader` (observable gauge) - `1` while this candidate holds leadership, otherwise `0`.
 
 ```csharp
 builder.Services.AddOpenTelemetry()

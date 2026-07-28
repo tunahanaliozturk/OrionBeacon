@@ -72,8 +72,8 @@ hand out a strictly increasing fencing token on each acquisition.
 
 ## Telemetry and events
 
-Subscribe to the `Moongazing.OrionBeacon` meter: `orionbeacon.attempts` (tagged `outcome`),
-`orionbeacon.transitions` (tagged `direction`), and an `orionbeacon.is_leader` gauge. Register an
+Subscribe to the `Moongazing.OrionBeacon` meter: `orion.beacon.attempts` (tagged `orion.outcome`),
+`orion.beacon.transitions` (tagged `direction`), and an `orion.beacon.is_leader` gauge. Register an
 `ILeadershipObserver` to react to `OnElected` and `OnDeposed`. The observer is fault-safe: an
 exception it throws never disrupts election.
 
