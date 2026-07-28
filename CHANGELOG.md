@@ -6,6 +6,31 @@ All notable changes to OrionBeacon are documented in this file. The format is ba
 [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and this project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.0] - 2026-07-28
+
+### Changed
+
+- **Converged the OpenTelemetry instrumentation onto the frozen `Orion.Abstractions` 1.0 spine.**
+  `LeaderElectionDiagnostics` now derives from `OrionInstrumentation` and names its metrics through
+  `OrionTelemetry`, so OrionBeacon shares the family's naming and static-tag conventions (multi-tenant
+  / multi-region labels set via `OrionInstrumentation.SetStaticTags` are now stamped onto every
+  measurement). References `Orion.Abstractions` 1.0.0.
+
+  **Breaking (telemetry only): metric and tag names changed.** The meter name is unchanged
+  (`Moongazing.OrionBeacon` — subscribers keep working), but the instruments were renamed to the
+  family convention and the outcome tag adopts the frozen key. Update dashboards/alerts:
+
+  | Before | After |
+  | --- | --- |
+  | `orionbeacon.attempts` | `orion.beacon.attempts` |
+  | `orionbeacon.transitions` | `orion.beacon.transitions` |
+  | `orionbeacon.is_leader` | `orion.beacon.is_leader` |
+  | tag `outcome` (on attempts) | tag `orion.outcome` |
+
+  The `direction` tag (on transitions) and every tag value (`acquired`/`renewed`/`denied`,
+  `elected`/`deposed`) are unchanged. No code-level API changed: `RecordAttempt`, `RecordTransition`,
+  and the `MeterName` constant keep their signatures.
+
 ## [0.4.0] - 2026-07-20
 
 ### Added
@@ -34,6 +59,7 @@ All notable changes to OrionBeacon are documented in this file. The format is ba
   fencing token that strictly increases on each leadership change and is stable across a renew, lease
   expiry letting a new leader take over, and fencing-checked release.
 
+[0.5.0]: https://github.com/tunahanaliozturk/OrionBeacon/releases/tag/v0.5.0
 [0.4.0]: https://github.com/tunahanaliozturk/OrionBeacon/releases/tag/v0.4.0
 
 ## [0.3.0] - 2026-06-22

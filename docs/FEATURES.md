@@ -56,9 +56,9 @@ To elect across a cluster, implement `ILeaseStore` over a store shared by all in
 
 `LeaderElectionDiagnostics` owns a `System.Diagnostics.Metrics.Meter` named `Moongazing.OrionBeacon` (the constant `MeterName`). It publishes:
 
-- `orionbeacon.attempts` - counter of acquisition attempts, tagged `outcome` (`acquired` / `renewed` / `denied`).
-- `orionbeacon.transitions` - counter of leadership transitions, tagged `direction` (`elected` / `deposed`).
-- `orionbeacon.is_leader` - observable gauge, `1` when this candidate is the leader, otherwise `0`.
+- `orion.beacon.attempts` - counter of acquisition attempts, tagged `orion.outcome` (`acquired` / `renewed` / `denied`).
+- `orion.beacon.transitions` - counter of leadership transitions, tagged `direction` (`elected` / `deposed`).
+- `orion.beacon.is_leader` - observable gauge, `1` when this candidate is the leader, otherwise `0`.
 
 It is a disposable singleton; disposing it releases the meter. Subscribe with any OpenTelemetry metrics pipeline via `AddMeter(LeaderElectionDiagnostics.MeterName)`.
 
@@ -72,4 +72,4 @@ It is a disposable singleton; disposing it releases the meter. Subscribe with an
 
 ## Targets and dependencies
 
-Multi-targets `net8.0`, `net9.0`, and `net10.0`. The single package reference is `Microsoft.Extensions.Hosting.Abstractions`. Built with nullable reference types, `TreatWarningsAsErrors`, the latest analyzers, and a generated XML documentation file.
+Multi-targets `net8.0`, `net9.0`, and `net10.0`. The package references are `Microsoft.Extensions.Hosting.Abstractions` and `Orion.Abstractions` (the family's shared contracts spine, which supplies the `OrionInstrumentation` telemetry base). Built with nullable reference types, `TreatWarningsAsErrors`, the latest analyzers, and a generated XML documentation file.

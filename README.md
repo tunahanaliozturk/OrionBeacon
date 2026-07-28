@@ -22,10 +22,10 @@ Scale a worker to three instances and your nightly job runs three times. The fix
 - **Hosted background loop.** `AddOrionBeacon` registers a `BackgroundService` that acquires and renews on the renew interval, survives a transient store fault, and resigns on shutdown so a follower is promoted promptly.
 - **A single `IsLeader` flag.** Gate leader-only work on `ILeaderElector.IsLeader`, or read the current `Lease` for its fencing token.
 - **Pluggable storage.** The default `InMemoryLeaseStore` elects within one process (single node or tests). Implement `ILeaseStore` over Redis, a database, or any shared store to elect across a cluster; the in-memory store is only added if none is registered.
-- **OpenTelemetry built in.** A `Meter` named `Moongazing.OrionBeacon` exposes attempt and transition counters plus an `is_leader` gauge, with no extra dependency.
+- **OpenTelemetry built in.** A `Meter` named `Moongazing.OrionBeacon` exposes attempt and transition counters plus an `is_leader` gauge, built on the shared `Orion.Abstractions` instrumentation spine so it follows the family's OTel naming and static-tag conventions.
 - **Leadership-change events.** Register an `ILeadershipObserver` to react to `OnElected` and `OnDeposed`. The observer is fault-safe: an exception it throws never disrupts election.
 - **Testable by design.** The election state machine advances one cycle at a time, so it is fully testable without real timers or sleeps. `InMemoryLeaseStore` also takes a `TimeProvider`, so a test can advance the clock past a lease's expiry and exercise time-driven failover with no real delay.
-- **No heavy dependencies.** One reference, `Microsoft.Extensions.Hosting.Abstractions`. Multi-targets `net8.0`, `net9.0`, and `net10.0`.
+- **No heavy dependencies.** Two references: `Microsoft.Extensions.Hosting.Abstractions` and `Orion.Abstractions` (the family's shared contracts spine). Multi-targets `net8.0`, `net9.0`, and `net10.0`.
 
 ## Install
 
@@ -159,9 +159,9 @@ builder.Services.AddOrionBeacon();
 
 OrionBeacon exposes a `System.Diagnostics.Metrics.Meter` named `Moongazing.OrionBeacon` (the constant `LeaderElectionDiagnostics.MeterName`). Subscribe to it from OpenTelemetry:
 
-- `orionbeacon.attempts` (counter, tagged `outcome` = `acquired` / `renewed` / `denied`) - lease acquisition attempts.
-- `orionbeacon.transitions` (counter, tagged `direction` = `elected` / `deposed`) - leadership transitions.
-- `orionbeacon.is_leader` (observable gauge) - `1` while this candidate holds leadership, otherwise `0`.
+- `orion.beacon.attempts` (counter, tagged `orion.outcome` = `acquired` / `renewed` / `denied`) - lease acquisition attempts.
+- `orion.beacon.transitions` (counter, tagged `direction` = `elected` / `deposed`) - leadership transitions.
+- `orion.beacon.is_leader` (observable gauge) - `1` while this candidate holds leadership, otherwise `0`.
 
 ```csharp
 builder.Services.AddOpenTelemetry()

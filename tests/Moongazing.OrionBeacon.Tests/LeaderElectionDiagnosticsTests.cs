@@ -3,6 +3,7 @@ namespace Moongazing.OrionBeacon.Tests;
 using System.Diagnostics.Metrics;
 using System.Reflection;
 
+using Moongazing.Orion.Abstractions.Diagnostics;
 using Moongazing.OrionBeacon.Diagnostics;
 
 using Xunit;
@@ -21,6 +22,10 @@ using Xunit;
 [Collection(DiagnosticsMeterObservers.Name)]
 public sealed class LeaderElectionDiagnosticsTests
 {
+    private const string AttemptsMetric = "orion.beacon.attempts";
+    private const string TransitionsMetric = "orion.beacon.transitions";
+    private const string IsLeaderMetric = "orion.beacon.is_leader";
+
     [Fact]
     public void The_meter_name_is_the_published_constant()
     {
@@ -46,14 +51,9 @@ public sealed class LeaderElectionDiagnosticsTests
         }
 
         using var diagnostics = new LeaderElectionDiagnostics();
-        var meterField = typeof(LeaderElectionDiagnostics).GetField(
-            "meter", BindingFlags.Instance | BindingFlags.NonPublic)
-            ?? throw new InvalidOperationException("LeaderElectionDiagnostics.meter field not found.");
-        var meter = (Meter)(meterField.GetValue(diagnostics)
-            ?? throw new InvalidOperationException("LeaderElectionDiagnostics.meter was null."));
 
-        Assert.False(string.IsNullOrEmpty(meter.Version));
-        Assert.Equal(expected, meter.Version);
+        Assert.False(string.IsNullOrEmpty(diagnostics.Meter.Version));
+        Assert.Equal(expected, diagnostics.Meter.Version);
     }
 
     [Fact]
@@ -65,11 +65,11 @@ public sealed class LeaderElectionDiagnosticsTests
         diagnostics.RecordAttempt("acquired");
         diagnostics.RecordAttempt("denied");
 
-        Assert.Equal(2, capture.CountFor("orionbeacon.attempts"));
+        Assert.Equal(2, capture.CountFor(AttemptsMetric));
         Assert.Contains(capture.Measurements,
-            m => m.Instrument == "orionbeacon.attempts" && m.Tag("outcome") == "acquired");
+            m => m.Instrument == AttemptsMetric && m.Tag(OrionTelemetry.Tags.Outcome) == "acquired");
         Assert.Contains(capture.Measurements,
-            m => m.Instrument == "orionbeacon.attempts" && m.Tag("outcome") == "denied");
+            m => m.Instrument == AttemptsMetric && m.Tag(OrionTelemetry.Tags.Outcome) == "denied");
     }
 
     [Fact]
@@ -81,7 +81,7 @@ public sealed class LeaderElectionDiagnosticsTests
         diagnostics.RecordTransition(elected: true);
 
         Assert.Contains(capture.Measurements,
-            m => m.Instrument == "orionbeacon.transitions" && m.Tag("direction") == "elected" && m.Value == 1);
+            m => m.Instrument == TransitionsMetric && m.Tag("direction") == "elected" && m.Value == 1);
     }
 
     [Fact]
@@ -93,7 +93,7 @@ public sealed class LeaderElectionDiagnosticsTests
         diagnostics.RecordTransition(elected: false);
 
         Assert.Contains(capture.Measurements,
-            m => m.Instrument == "orionbeacon.transitions" && m.Tag("direction") == "deposed");
+            m => m.Instrument == TransitionsMetric && m.Tag("direction") == "deposed");
     }
 
     [Fact]
@@ -160,13 +160,9 @@ public sealed class LeaderElectionDiagnosticsTests
 
             // Diagnostics instances all share the meter name "Moongazing.OrionBeacon", so name alone
             // cannot isolate one instance's instruments from another's that may be live in a parallel
-            // test. Enable only instruments belonging to THIS instance's meter, identified by the
-            // private 'meter' field, so RecordObservableInstruments reads only our gauge.
-            var meterField = typeof(LeaderElectionDiagnostics).GetField(
-                "meter", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)
-                ?? throw new InvalidOperationException("LeaderElectionDiagnostics.meter field not found.");
-            var ownMeter = (Meter)(meterField.GetValue(diagnostics)
-                ?? throw new InvalidOperationException("LeaderElectionDiagnostics.meter was null."));
+            // test. Enable only instruments belonging to THIS instance's meter (the OrionInstrumentation
+            // base exposes it as a public property) so RecordObservableInstruments reads only our gauge.
+            var ownMeter = diagnostics.Meter;
 
             listener = new MeterListener
             {
@@ -190,7 +186,7 @@ public sealed class LeaderElectionDiagnosticsTests
                 lock (gate)
                 {
                     measurements.Add(new Sample(instrument.Name, value, dict));
-                    if (instrument.Name == "orionbeacon.is_leader")
+                    if (instrument.Name == IsLeaderMetric)
                     {
                         gaugeReadings.Add(value);
                     }
@@ -208,7 +204,7 @@ public sealed class LeaderElectionDiagnosticsTests
                 lock (gate)
                 {
                     measurements.Add(new Sample(instrument.Name, value, dict));
-                    if (instrument.Name == "orionbeacon.is_leader")
+                    if (instrument.Name == IsLeaderMetric)
                     {
                         gaugeReadings.Add(value);
                     }
