@@ -1,0 +1,109 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="680" viewBox="0 0 1200 680">
+  <!--
+    Orion family diagram template. Copy it, keep <defs> and <style>, replace the body.
+    Classes: .step (our code) .ext (backend / external system) .ok (success end) .fail (failure path)
+             .decision (diamond) .note (side remark) .lane (sequence lifeline)
+    Arrows: class="flow" (main path), "flow alt" (alternate / failure path, dashed), "flow back" (response).
+  -->
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#64748b"/>
+    </marker>
+    <marker id="arrow-fail" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#dc2626"/>
+    </marker>
+  </defs>
+  <style>
+    text { font-family: "Segoe UI", Inter, "Helvetica Neue", Arial, sans-serif; fill: #1e1b4b; }
+    .title { font-size: 24px; font-weight: 700; }
+    .subtitle { font-size: 14px; fill: #475569; }
+    .label { font-size: 15px; font-weight: 600; }
+    .small { font-size: 12.5px; fill: #475569; }
+    .code { font-family: "Cascadia Code", Consolas, "SF Mono", monospace; font-size: 13px; fill: #3730a3; }
+    .edge { font-size: 12.5px; fill: #334155; }
+    .step { fill: #eef2ff; stroke: #4f46e5; stroke-width: 2; }
+    .ext { fill: #f0f9ff; stroke: #0284c7; stroke-width: 2; }
+    .ok { fill: #ecfdf5; stroke: #059669; stroke-width: 2; }
+    .fail { fill: #fef2f2; stroke: #dc2626; stroke-width: 2; }
+    .decision { fill: #fffbeb; stroke: #d97706; stroke-width: 2; }
+    .note { fill: #f8fafc; stroke: #cbd5e1; stroke-width: 1.5; stroke-dasharray: 4 3; }
+    .lane { stroke: #cbd5e1; stroke-width: 1.5; stroke-dasharray: 6 5; }
+    .flow { fill: none; stroke: #64748b; stroke-width: 2; marker-end: url(#arrow); }
+    .flow.alt { stroke: #dc2626; stroke-dasharray: 6 4; marker-end: url(#arrow-fail); }
+    .flow.back { stroke-dasharray: 6 4; }
+    .badge { fill: #4f46e5; }
+    .badge-text { font-size: 12px; font-weight: 700; fill: #ffffff; }
+  </style>
+
+  <rect width="1200" height="680" fill="#ffffff"/>
+
+  <text class="title" x="40" y="52">OrionBeacon - failover and fencing</text>
+  <text class="subtitle" x="40" y="78">A leader that stops renewing loses the lease after LeaseDuration; its stale fencing token is then rejected downstream.</text>
+
+  <!-- participants -->
+  <rect class="step" x="60" y="100" width="220" height="56" rx="12"/>
+  <text class="label" x="170" y="125" text-anchor="middle">Candidate A</text>
+  <text class="small" x="170" y="145" text-anchor="middle">LeaderElector</text>
+  <rect class="ext" x="360" y="100" width="220" height="56" rx="12"/>
+  <text class="label" x="470" y="125" text-anchor="middle">Lease store</text>
+  <text class="small" x="470" y="145" text-anchor="middle">ILeaseStore</text>
+  <rect class="step" x="660" y="100" width="220" height="56" rx="12"/>
+  <text class="label" x="770" y="125" text-anchor="middle">Candidate B</text>
+  <text class="small" x="770" y="145" text-anchor="middle">LeaderElector</text>
+  <rect class="ext" x="950" y="100" width="220" height="56" rx="12"/>
+  <text class="label" x="1060" y="125" text-anchor="middle">Downstream resource</text>
+  <text class="small" x="1060" y="145" text-anchor="middle">keeps the highest token seen</text>
+
+  <!-- lifelines -->
+  <line class="lane" x1="170" y1="156" x2="170" y2="650"/>
+  <line class="lane" x1="470" y1="156" x2="470" y2="650"/>
+  <line class="lane" x1="770" y1="156" x2="770" y2="650"/>
+  <line class="lane" x1="1060" y1="156" x2="1060" y2="650"/>
+
+  <!-- 1: A acquires -->
+  <path class="flow" d="M182,200 L468,200"/>
+  <text class="code" x="320" y="192" text-anchor="middle">TryAcquireOrRenewAsync</text>
+  <circle class="badge" cx="170" cy="200" r="11"/>
+  <text class="badge-text" x="170" y="204" text-anchor="middle">1</text>
+  <path class="flow back" d="M470,235 L172,235"/>
+  <text class="edge" x="320" y="227" text-anchor="middle">Acquired, FencingToken = 7</text>
+
+  <!-- 2: B denied -->
+  <path class="flow" d="M758,280 L472,280"/>
+  <text class="code" x="620" y="272" text-anchor="middle">TryAcquireOrRenewAsync</text>
+  <circle class="badge" cx="770" cy="280" r="11"/>
+  <text class="badge-text" x="770" y="284" text-anchor="middle">2</text>
+  <path class="flow back" d="M470,315 L768,315"/>
+  <text class="edge" x="620" y="307" text-anchor="middle">Denied, HolderId = A</text>
+
+  <!-- outage -->
+  <rect class="fail" x="60" y="345" width="220" height="54" rx="10"/>
+  <text class="small" x="170" y="368" text-anchor="middle">A stops renewing</text>
+  <text class="small" x="170" y="387" text-anchor="middle">crash or stop-the-world pause</text>
+  <rect class="note" x="360" y="345" width="220" height="54" rx="10"/>
+  <text class="small" x="470" y="368" text-anchor="middle">no renewal within LeaseDuration:</text>
+  <text class="small" x="470" y="387" text-anchor="middle">the lease expires</text>
+
+  <!-- 3: B acquires -->
+  <path class="flow" d="M758,430 L472,430"/>
+  <text class="code" x="620" y="422" text-anchor="middle">TryAcquireOrRenewAsync</text>
+  <circle class="badge" cx="770" cy="430" r="11"/>
+  <text class="badge-text" x="770" y="434" text-anchor="middle">3</text>
+  <path class="flow back" d="M470,465 L768,465"/>
+  <text class="edge" x="620" y="457" text-anchor="middle">Acquired, FencingToken = 8</text>
+  <text class="small" x="784" y="492">IsLeader = true, OnElected(lease)</text>
+
+  <!-- 4: B writes -->
+  <path class="flow" d="M782,525 L1058,525"/>
+  <text class="edge" x="920" y="517" text-anchor="middle">write with token 8: accepted</text>
+  <circle class="badge" cx="770" cy="525" r="11"/>
+  <text class="badge-text" x="770" y="529" text-anchor="middle">4</text>
+
+  <!-- 5: stale A writes -->
+  <path class="flow alt" d="M182,580 L1058,580"/>
+  <text class="edge" x="620" y="572" text-anchor="middle">A resumes and writes with token 7</text>
+  <circle class="badge" cx="170" cy="580" r="11"/>
+  <text class="badge-text" x="170" y="584" text-anchor="middle">5</text>
+  <rect class="fail" x="960" y="596" width="200" height="44" rx="10"/>
+  <text class="label" x="1060" y="624" text-anchor="middle">rejected: 7 &lt; 8</text>
+</svg>

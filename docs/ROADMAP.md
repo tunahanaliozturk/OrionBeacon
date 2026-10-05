@@ -2,13 +2,17 @@
 
 OrionBeacon is leader election for .NET: candidates compete for a renewable lease in a shared store, the holder is the leader, and fencing tokens keep a stale leader from writing as if it were still in charge.
 
-Current release: **0.4.0**.
+Current release: **0.5.0**.
 
 The version milestones below are directions, not commitments. Dates are targets and will move. The guiding constraint is unchanged: keep the core small and dependency-light, push anything that needs a database or a broker into its own opt-in package, and do not reimplement consensus. If an item matters to you, an issue saying so is the best way to move it up.
 
 ## Released
 
-### 0.4.0 - 2026-06-27
+### 0.5.0 - 2026-07-28
+
+- The OpenTelemetry instrumentation moved onto the shared `Orion.Abstractions` 1.0 spine: `LeaderElectionDiagnostics` derives from `OrionInstrumentation`, static tags set through `OrionInstrumentation.SetStaticTags` are stamped on every measurement, and the instruments follow the family naming (`orion.beacon.attempts`, `orion.beacon.transitions`, `orion.beacon.is_leader`, tag `orion.outcome`). The meter name `Moongazing.OrionBeacon` is unchanged.
+
+### 0.4.0 - 2026-07-20
 
 - A relational `ILeaseStore` shipped as its own package, **OrionBeacon.Stores.Relational**, over both
   PostgreSQL and SQL Server. A single leader row per resource holds the holder, the fencing token, and
@@ -43,13 +47,13 @@ Initial release: the `ILeaderElector` acquire-or-renew state machine, the `Leade
 
 ## Next
 
-### 0.5.0 - leadership-change events and readiness (target 2026 Q4)
+### 0.6.0 - leadership-change events and readiness (target 2026 Q4)
 
 - An async leadership hook. Today `ILeadershipObserver` is synchronous and observability-only. An opt-in async surface (or a "run this delegate only while leadership is held, and cancel it on deposition" wrapper) covers the common case of starting and stopping real work on a transition without each consumer writing the same plumbing.
 - An `IHealthCheck` that reports this instance's leadership state, so leader-gated work can be surfaced to readiness probes and orchestrators without consumers polling `IsLeader` themselves.
 - A read-only peek on `ILeaseStore` to report the current holder and fencing token without contending for the lease, which the health check and diagnostics can both read from.
 
-### 0.6.0 - multiple independent elections in one process (target 2027 Q1)
+### 0.7.0 - multiple independent elections in one process (target 2027 Q1)
 
 Registration today assumes one elected resource per application: a single `LeaderElectionOptions`, one elector, one hosted loop. A keyed or named registration that elects several independent resources side by side, each with its own resource name, options, elector, and lease store, would suit an app that coordinates more than one "only one node does this" responsibility. This is an additive API; the single-resource `AddOrionBeacon()` stays as the simple default.
 

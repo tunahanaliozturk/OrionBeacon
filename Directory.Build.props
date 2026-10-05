@@ -27,15 +27,9 @@
     <PublishRepositoryUrl>true</PublishRepositoryUrl>
     <IncludeSymbols>true</IncludeSymbols>
     <SymbolPackageFormat>snupkg</SymbolPackageFormat>
-      <PackageIcon>icon.png</PackageIcon>
-    <PackageReadmeFile>README.md</PackageReadmeFile>
-    <!-- The packed README defaults to the repository root one; a sub-package overrides this to ship
-         its own README to NuGet by setting PackageReadmeSource to its local README path. -->
-    <PackageReadmeSource Condition="'$(PackageReadmeSource)' == ''">$(MSBuildThisFileDirectory)README.md</PackageReadmeSource>
-</PropertyGroup>
+    <PackageIcon>icon.png</PackageIcon>
+  </PropertyGroup>
   <ItemGroup Condition="'$(IsPackable)' == 'true'">
     <None Include="$(MSBuildThisFileDirectory)docs/icon.png" Pack="true" PackagePath="\" Visible="false" />
-    <None Include="$(MSBuildThisFileDirectory)docs/logo.png" Pack="true" PackagePath="docs/" Visible="false" />
-    <None Include="$(PackageReadmeSource)" Pack="true" PackagePath="\" Visible="false" />
   </ItemGroup>
 </Project>

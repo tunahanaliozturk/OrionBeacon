@@ -1,15 +1,30 @@
 <p align="center">
-  <img src="docs/logo.png" alt="OrionBeacon" width="150" />
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/logo.png">
+    <img src="docs/icon.png" alt="OrionBeacon logo" width="150">
+  </picture>
 </p>
 
 # OrionBeacon
 
 [![CI/CD](https://github.com/tunahanaliozturk/OrionBeacon/actions/workflows/ci-cd.yml/badge.svg)](https://github.com/tunahanaliozturk/OrionBeacon/actions/workflows/ci-cd.yml)
 [![NuGet](https://img.shields.io/nuget/v/OrionBeacon.svg)](https://www.nuget.org/packages/OrionBeacon/)
+[![License: MIT](https://img.shields.io/badge/license-MIT-yellow.svg)](LICENSE)
+![.NET](https://img.shields.io/badge/.NET-8.0%20%7C%209.0%20%7C%2010.0-purple.svg)
 
 Leader election for .NET: run the same service on several instances and OrionBeacon keeps exactly one elected, so "only one node should do this" work runs once, not once per instance.
 
 Part of the **Orion** family. Usable entirely on its own.
+
+![OrionBeacon packages: the app registers AddOrionBeacon; the hosted LeaderElectionService drives LeaderElector, which calls ILeaseStore backed by InMemoryLeaseStore, RedisLeaseStore or RelationalLeaseStore](docs/diagrams/overview.png)
+
+## Packages
+
+| Package | What it contains |
+|---------|------------------|
+| [`OrionBeacon`](https://www.nuget.org/packages/OrionBeacon/) | `ILeaderElector`, `LeaderElectionService` hosted loop, `ILeaseStore` with the in-process `InMemoryLeaseStore`, `ILeadershipObserver`, telemetry, `AddOrionBeacon` |
+| [`OrionBeacon.Stores.Redis`](https://www.nuget.org/packages/OrionBeacon.Stores.Redis/) | `RedisLeaseStore` (atomic Lua script, Redis Cluster safe), `AddOrionBeaconRedisStore` |
+| [`OrionBeacon.Stores.Relational`](https://www.nuget.org/packages/OrionBeacon.Stores.Relational/) | `RelationalLeaseStore` over PostgreSQL or SQL Server, `AddOrionBeaconPostgresStore`, `AddOrionBeaconSqlServerStore` |
 
 ## Why
 
@@ -21,16 +36,23 @@ Scale a worker to three instances and your nightly job runs three times. The fix
 - **Fencing tokens.** Every new leadership term gets a strictly increasing `long` token. Pass it to downstream resources to fence out a stale leader that resumed after a stop-the-world pause.
 - **Hosted background loop.** `AddOrionBeacon` registers a `BackgroundService` that acquires and renews on the renew interval, survives a transient store fault, and resigns on shutdown so a follower is promoted promptly.
 - **A single `IsLeader` flag.** Gate leader-only work on `ILeaderElector.IsLeader`, or read the current `Lease` for its fencing token.
-- **Pluggable storage.** The default `InMemoryLeaseStore` elects within one process (single node or tests). Implement `ILeaseStore` over Redis, a database, or any shared store to elect across a cluster; the in-memory store is only added if none is registered.
+- **Pluggable storage.** The default `InMemoryLeaseStore` elects within one process (single node or tests). To elect across a cluster, add the Redis or relational (PostgreSQL / SQL Server) store package, or implement `ILeaseStore` over any shared store; the in-memory store is only added if none is registered.
 - **OpenTelemetry built in.** A `Meter` named `Moongazing.OrionBeacon` exposes attempt and transition counters plus an `is_leader` gauge, built on the shared `Orion.Abstractions` instrumentation spine so it follows the family's OTel naming and static-tag conventions.
 - **Leadership-change events.** Register an `ILeadershipObserver` to react to `OnElected` and `OnDeposed`. The observer is fault-safe: an exception it throws never disrupts election.
 - **Testable by design.** The election state machine advances one cycle at a time, so it is fully testable without real timers or sleeps. `InMemoryLeaseStore` also takes a `TimeProvider`, so a test can advance the clock past a lease's expiry and exercise time-driven failover with no real delay.
-- **No heavy dependencies.** Two references: `Microsoft.Extensions.Hosting.Abstractions` and `Orion.Abstractions` (the family's shared contracts spine). Multi-targets `net8.0`, `net9.0`, and `net10.0`.
+- **No heavy dependencies.** The core package has two references: `Microsoft.Extensions.Hosting.Abstractions` and `Orion.Abstractions` (the family's shared contracts spine). Store drivers live in their own packages. Multi-targets `net8.0`, `net9.0`, and `net10.0`.
 
 ## Install
 
 ```
 dotnet add package OrionBeacon
+```
+
+For election across a cluster, add one store package:
+
+```
+dotnet add package OrionBeacon.Stores.Redis
+dotnet add package OrionBeacon.Stores.Relational
 ```
 
 ## Quick start
@@ -66,6 +88,10 @@ public sealed class NightlyReportJob(ILeaderElector elector)
 
 The hosted loop registered by `AddOrionBeacon` acquires and renews the lease in the background and resigns on shutdown, so a healthy follower is promoted promptly.
 
+![One election cycle: LeaderElectionService calls TryAcquireOrRenewAsync; Acquired or Renewed makes this candidate the leader, Denied a follower; a store fault is swallowed and every path waits RenewInterval before the next cycle](docs/diagrams/election-cycle.png)
+
+A store fault on one cycle is swallowed and retried on the next; `IsLeader` and `Lease` keep their previous values until a cycle succeeds.
+
 ## Usage
 
 ### Check leadership
@@ -92,12 +118,31 @@ if (elector is { IsLeader: true, Lease: { } lease })
 }
 ```
 
-### A custom `ILeaseStore` for clustered election
+![Failover and fencing: candidate A holds the lease with token 7 and stops renewing; after LeaseDuration candidate B acquires with token 8; A's later write with token 7 is rejected downstream](docs/diagrams/failover-fencing.png)
 
-The default `InMemoryLeaseStore` elects a leader only within one process. To elect across a cluster, implement `ILeaseStore` over a store shared by all instances and register it before `AddOrionBeacon()`; the in-memory store is only added if none is present.
+### Elect across a cluster with Redis or a database
+
+The default `InMemoryLeaseStore` elects a leader only within one process. Register a shared store before `AddOrionBeacon()`; the in-memory store is only added if no `ILeaseStore` is present.
 
 ```csharp
-public sealed class RedisLeaseStore : ILeaseStore
+// Redis (OrionBeacon.Stores.Redis)
+builder.Services.AddOrionBeaconRedisStore("localhost:6379");
+
+// or PostgreSQL / SQL Server (OrionBeacon.Stores.Relational)
+builder.Services.AddOrionBeaconPostgresStore("Host=localhost;Database=app;Username=app;Password=secret");
+builder.Services.AddOrionBeaconSqlServerStore("Server=localhost;Database=app;User Id=sa;Password=secret;TrustServerCertificate=True");
+
+builder.Services.AddOrionBeacon(o => o.ResourceName = "jobs");
+```
+
+Register one of them. `RedisLeaseStoreOptions` sets `KeyPrefix` (default `orionbeacon:lease:`) and `Database` (default `-1`, the connection's default); `RelationalLeaseStoreOptions` sets `TableName` (default `orionbeacon_leases`, created on first use) and `CommandTimeout` (default 30 seconds). Every candidate must point at the same store. See each package's README under `src/*/docs/` for details.
+
+### A custom `ILeaseStore`
+
+For any other shared store, implement `ILeaseStore` yourself and register it the same way.
+
+```csharp
+public sealed class EtcdLeaseStore : ILeaseStore
 {
     public Task<LeaseAcquisition> TryAcquireOrRenewAsync(
         string resource, string candidateId, TimeSpan duration, CancellationToken cancellationToken = default)
@@ -116,7 +161,7 @@ public sealed class RedisLeaseStore : ILeaseStore
 ```
 
 ```csharp
-builder.Services.AddSingleton<ILeaseStore, RedisLeaseStore>();
+builder.Services.AddSingleton<ILeaseStore, EtcdLeaseStore>();
 builder.Services.AddOrionBeacon(o => o.ResourceName = "jobs");
 ```
 
@@ -199,6 +244,8 @@ Run the library's own suite from the repository root:
 dotnet test
 ```
 
+`tests/Moongazing.OrionBeacon.Conformance.Tests` runs the shared `ILeaseStore` contract against the in-memory store and against real Redis, PostgreSQL and SQL Server containers through Testcontainers, so Docker must be running for those.
+
 ## Benchmarks
 
 A [BenchmarkDotNet](https://benchmarkdotnet.org/) suite covers the in-memory election hot paths: the lease-store critical section, a full elector cycle, and the small value objects on the path. No measured numbers are committed because results are hardware- and runtime-specific. See [benchmarks.md](benchmarks.md) for how to run them.
@@ -209,9 +256,9 @@ dotnet run -c Release --project benchmarks/Moongazing.OrionBeacon.Benchmarks
 
 ## Versioning
 
-OrionBeacon follows [SemVer](https://semver.org/). The package multi-targets `net8.0`, `net9.0`, and `net10.0`. The project builds with `TreatWarningsAsErrors`, nullable reference types enabled, and the latest analyzers. Notable changes are recorded in [CHANGELOG.md](CHANGELOG.md).
+OrionBeacon follows [SemVer](https://semver.org/). The packages multi-target `net8.0`, `net9.0`, and `net10.0`. The project builds with `TreatWarningsAsErrors`, nullable reference types enabled, and the `latest-recommended` analyzers. Notable changes are recorded in [CHANGELOG.md](CHANGELOG.md).
 
-The current release, **0.2.0**, adds a public `InMemoryLeaseStore(TimeProvider)` constructor (defaulting to `TimeProvider.System`) so tests and consumers can drive a deterministic clock and exercise time-driven failover, and makes `TryAcquireOrRenewAsync` and `ReleaseAsync` honor the `CancellationToken` by throwing when it is already cancelled. The existing constructors are unchanged.
+The current release, **0.5.0**, moves the telemetry onto the shared `Orion.Abstractions` 1.0 instrumentation spine. The meter name is unchanged, but the instruments were renamed (`orionbeacon.*` to `orion.beacon.*`, and the attempts tag `outcome` to `orion.outcome`), so update dashboards and alerts; see the changelog for the full table.
 
 ## More from the Orion family
 
@@ -228,10 +275,11 @@ OrionBeacon is one of a set of standalone .NET libraries:
 - [docs/FEATURES.md](docs/FEATURES.md) - a deeper breakdown of every capability and the type behind it.
 - [docs/ROADMAP.md](docs/ROADMAP.md) - ideas under consideration, no promised dates.
 - [benchmarks.md](benchmarks.md) - the benchmark suite and how to run it.
+- Package READMEs (the nuget.org pages): [OrionBeacon](src/Moongazing.OrionBeacon/docs/README.md), [OrionBeacon.Stores.Redis](src/Moongazing.OrionBeacon.Stores.Redis/docs/README.md), [OrionBeacon.Stores.Relational](src/Moongazing.OrionBeacon.Stores.Relational/docs/README.md).
 
 ## Contributing
 
-Issues and pull requests welcome. Please read [CONTRIBUTING.md](CONTRIBUTING.md) and the [Code of Conduct](CODE_OF_CONDUCT.md) before opening one.
+Issues and pull requests welcome. Please read [CONTRIBUTING.md](CONTRIBUTING.md) and the [Code of Conduct](CODE_OF_CONDUCT.md) before opening one. Report vulnerabilities privately as described in [SECURITY.md](SECURITY.md).
 
 ## License
 
