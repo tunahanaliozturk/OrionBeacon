@@ -40,9 +40,19 @@ Two invariants an implementation must hold: acquisition must be atomic so two ca
 
 ### `InMemoryLeaseStore`
 
-The default store, registered only if no other `ILeaseStore` is present. It is process-local: it elects a leader among candidates in the same process, which is correct for a single node and for tests. Atomicity comes from a lock around the acquire/renew/release critical section. It takes the system clock by default; an internal constructor accepts a clock delegate so tests can drive time deterministically.
+The default store, registered only if no other `ILeaseStore` is present. It is process-local: it elects a leader among candidates in the same process, which is correct for a single node and for tests. Atomicity comes from a lock around the acquire/renew/release critical section. It takes the system clock by default; the public `InMemoryLeaseStore(TimeProvider)` constructor accepts a controllable clock (for example `FakeTimeProvider`) so tests can drive lease expiry deterministically.
 
-To elect across a cluster, implement `ILeaseStore` over a store shared by all instances (Redis, a relational table, etc.) and register it before `AddOrionBeacon()`.
+### `RedisLeaseStore` (package `OrionBeacon.Stores.Redis`)
+
+Elects across a cluster over Redis. Acquire-or-renew is one Lua script; the lease is a hash with a TTL and the fencing token a separate counter key that is never deleted, both wrapped in a Redis Cluster hash tag (`orionbeacon:lease:{jobs}` and `orionbeacon:lease:{jobs}:fence` for resource `jobs`) so they share a slot. Register it with `AddOrionBeaconRedisStore(connectionString, configure?)`, or `AddOrionBeaconRedisStore(configure?)` to reuse an already-registered `IConnectionMultiplexer`. `RedisLeaseStoreOptions` sets `KeyPrefix` (default `orionbeacon:lease:`) and `Database` (default `-1`).
+
+### `RelationalLeaseStore` (package `OrionBeacon.Stores.Relational`)
+
+Elects across a cluster over PostgreSQL or SQL Server with one leader row per resource. Acquire-or-renew is one conditional upsert (`INSERT ... ON CONFLICT ... RETURNING` or `MERGE ... WITH (HOLDLOCK) ... OUTPUT`), liveness is judged by the database clock, and release tombstones the row so the fencing token keeps climbing. Register it with `AddOrionBeaconPostgresStore(connectionString, configure?)` or `AddOrionBeaconSqlServerStore(connectionString, configure?)`. `RelationalLeaseStoreOptions` sets `TableName` (default `orionbeacon_leases`, created on first use) and `CommandTimeout` (default 30 seconds).
+
+### Your own store
+
+To elect over any other shared store, implement `ILeaseStore` and register it before `AddOrionBeacon()`. The conformance suite in `tests/Moongazing.OrionBeacon.Conformance.Tests` (`LeaseStoreConformanceTests`) shows the contract every store must pass.
 
 ## Hosted background loop
 
@@ -68,7 +78,7 @@ It is a disposable singleton; disposing it releases the meter. Subscribe with an
 
 ## Registration
 
-`OrionBeaconServiceCollectionExtensions.AddOrionBeacon(services, configure?)` wires everything: the options (validated), the diagnostics singleton, an `InMemoryLeaseStore` if no `ILeaseStore` is registered, the `ILeaderElector`, and the hosted `LeaderElectionService`. It uses `TryAdd` throughout, so any of these registered earlier wins, which is how a custom store or observer is substituted.
+`OrionBeaconServiceCollectionExtensions.AddOrionBeacon(services, configure?)` wires everything: the options (validated), the diagnostics singleton, an `InMemoryLeaseStore` if no `ILeaseStore` is registered, the `ILeaderElector`, and the hosted `LeaderElectionService`. It uses `TryAdd` for the options, diagnostics, store and elector, so any of these registered earlier wins, which is how a custom store is substituted. The elector resolves an optional `ILeadershipObserver` from the container, so registering one before or after `AddOrionBeacon` both work.
 
 ## Targets and dependencies
 

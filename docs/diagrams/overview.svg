@@ -1,0 +1,127 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="614" viewBox="0 0 1200 614">
+  <!--
+    Orion family diagram template. Copy it, keep <defs> and <style>, replace the body.
+    Classes: .step (our code) .ext (backend / external system) .ok (success end) .fail (failure path)
+             .decision (diamond) .note (side remark) .lane (sequence lifeline)
+    Arrows: class="flow" (main path), "flow alt" (alternate / failure path, dashed), "flow back" (response).
+  -->
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#64748b"/>
+    </marker>
+    <marker id="arrow-fail" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#dc2626"/>
+    </marker>
+  </defs>
+  <style>
+    text { font-family: "Segoe UI", Inter, "Helvetica Neue", Arial, sans-serif; fill: #1e1b4b; }
+    .title { font-size: 24px; font-weight: 700; }
+    .subtitle { font-size: 14px; fill: #475569; }
+    .label { font-size: 15px; font-weight: 600; }
+    .small { font-size: 12.5px; fill: #475569; }
+    .code { font-family: "Cascadia Code", Consolas, "SF Mono", monospace; font-size: 13px; fill: #3730a3; }
+    .edge { font-size: 12.5px; fill: #334155; }
+    .step { fill: #eef2ff; stroke: #4f46e5; stroke-width: 2; }
+    .ext { fill: #f0f9ff; stroke: #0284c7; stroke-width: 2; }
+    .ok { fill: #ecfdf5; stroke: #059669; stroke-width: 2; }
+    .fail { fill: #fef2f2; stroke: #dc2626; stroke-width: 2; }
+    .decision { fill: #fffbeb; stroke: #d97706; stroke-width: 2; }
+    .note { fill: #f8fafc; stroke: #cbd5e1; stroke-width: 1.5; stroke-dasharray: 4 3; }
+    .lane { stroke: #cbd5e1; stroke-width: 1.5; stroke-dasharray: 6 5; }
+    .flow { fill: none; stroke: #64748b; stroke-width: 2; marker-end: url(#arrow); }
+    .flow.alt { stroke: #dc2626; stroke-dasharray: 6 4; marker-end: url(#arrow-fail); }
+    .flow.back { stroke-dasharray: 6 4; }
+    .badge { fill: #4f46e5; }
+    .badge-text { font-size: 12px; font-weight: 700; fill: #ffffff; }
+  </style>
+
+  <rect width="1200" height="614" fill="#ffffff"/>
+
+  <text class="title" x="40" y="52">OrionBeacon - packages and how the app reaches them</text>
+  <text class="subtitle" x="40" y="78">One registration call wires the elector and its hosted loop; the lease store decides whether election spans one process or the cluster.</text>
+
+  <!-- app -->
+  <rect class="step" x="40" y="110" width="230" height="90" rx="14"/>
+  <text class="label" x="155" y="143" text-anchor="middle">Your app</text>
+  <text class="small" x="155" y="166" text-anchor="middle">gates work on IsLeader</text>
+  <text class="small" x="155" y="186" text-anchor="middle">fences writes by FencingToken</text>
+
+  <path class="flow" d="M270,155 L318,155"/>
+
+  <!-- registration -->
+  <rect class="step" x="320" y="110" width="260" height="90" rx="14"/>
+  <text class="code" x="450" y="146" text-anchor="middle" style="font-variant-ligatures: none">AddOrionBeacon(o =&gt; ...)</text>
+  <text class="small" x="450" y="170" text-anchor="middle">validates LeaderElectionOptions</text>
+  <text class="small" x="450" y="190" text-anchor="middle">TryAdd: earlier registrations win</text>
+
+  <path class="flow" d="M580,155 L628,155"/>
+
+  <!-- elector -->
+  <rect class="step" x="630" y="110" width="250" height="90" rx="14"/>
+  <text class="label" x="755" y="143" text-anchor="middle">LeaderElector</text>
+  <text class="small" x="755" y="166" text-anchor="middle">ILeaderElector: IsLeader, Lease</text>
+  <text class="small" x="755" y="186" text-anchor="middle">TryElectAsync, ResignAsync</text>
+
+  <!-- hosted loop -->
+  <path class="flow" d="M930,155 L882,155"/>
+  <text class="edge" x="905" y="145" text-anchor="middle">drives</text>
+  <rect class="step" x="930" y="110" width="240" height="90" rx="14"/>
+  <text class="label" x="1050" y="143" text-anchor="middle">LeaderElectionService</text>
+  <text class="small" x="1050" y="166" text-anchor="middle">hosted BackgroundService</text>
+  <text class="small" x="1050" y="186" text-anchor="middle">one cycle per RenewInterval</text>
+
+  <!-- store contract -->
+  <path class="flow" d="M700,200 L700,258"/>
+  <text class="edge" x="710" y="234">each cycle</text>
+  <rect class="step" x="40" y="260" width="790" height="64" rx="14"/>
+  <text class="code" x="435" y="286" text-anchor="middle">ILeaseStore.TryAcquireOrRenewAsync / ReleaseAsync</text>
+  <text class="small" x="435" y="309" text-anchor="middle">atomic acquire, renew or deny; every new term gets a strictly higher fencing token</text>
+
+  <!-- telemetry -->
+  <path class="flow" d="M868,200 L868,258"/>
+  <rect class="step" x="860" y="260" width="310" height="64" rx="14"/>
+  <text class="small" x="1015" y="286" text-anchor="middle">meter Moongazing.OrionBeacon</text>
+  <text class="small" x="1015" y="309" text-anchor="middle">ILeadershipObserver: OnElected, OnDeposed</text>
+
+  <!-- stores -->
+  <path class="flow" d="M165,324 L165,358"/>
+  <rect class="step" x="40" y="360" width="250" height="110" rx="14"/>
+  <text class="label" x="165" y="390" text-anchor="middle">InMemoryLeaseStore</text>
+  <text class="small" x="165" y="414" text-anchor="middle">package OrionBeacon (default)</text>
+  <text class="small" x="165" y="436" text-anchor="middle">one process: single node, tests</text>
+  <text class="small" x="165" y="458" text-anchor="middle">takes a TimeProvider</text>
+
+  <path class="flow" d="M435,324 L435,358"/>
+  <rect class="step" x="310" y="360" width="250" height="110" rx="14"/>
+  <text class="label" x="435" y="390" text-anchor="middle">RedisLeaseStore</text>
+  <text class="small" x="435" y="414" text-anchor="middle">OrionBeacon.Stores.Redis</text>
+  <text class="code" x="435" y="440" text-anchor="middle">AddOrionBeaconRedisStore</text>
+
+  <path class="flow" d="M705,324 L705,358"/>
+  <rect class="step" x="580" y="360" width="250" height="110" rx="14"/>
+  <text class="label" x="705" y="390" text-anchor="middle">RelationalLeaseStore</text>
+  <text class="small" x="705" y="414" text-anchor="middle">OrionBeacon.Stores.Relational</text>
+  <text class="code" x="705" y="438" text-anchor="middle">AddOrionBeaconPostgresStore</text>
+  <text class="code" x="705" y="458" text-anchor="middle">AddOrionBeaconSqlServerStore</text>
+
+  <!-- backends -->
+  <path class="flow" d="M435,470 L435,518"/>
+  <rect class="ext" x="310" y="520" width="250" height="64" rx="14"/>
+  <text class="label" x="435" y="546" text-anchor="middle">Redis</text>
+  <text class="small" x="435" y="568" text-anchor="middle">Lua script, TTL hash, fence counter</text>
+
+  <path class="flow" d="M705,470 L705,518"/>
+  <rect class="ext" x="580" y="520" width="250" height="64" rx="14"/>
+  <text class="label" x="705" y="546" text-anchor="middle">PostgreSQL or SQL Server</text>
+  <text class="small" x="705" y="568" text-anchor="middle">one row per resource, DB clock</text>
+
+  <!-- note -->
+  <rect class="note" x="860" y="360" width="310" height="224" rx="10"/>
+  <text class="small" x="880" y="392">Register a shared store before</text>
+  <text class="small" x="880" y="414">AddOrionBeacon(): the in-memory store</text>
+  <text class="small" x="880" y="436">is added only when no ILeaseStore</text>
+  <text class="small" x="880" y="458">is registered yet.</text>
+  <text class="small" x="880" y="498">Every candidate competing for the</text>
+  <text class="small" x="880" y="520">same leadership uses the same</text>
+  <text class="small" x="880" y="542">ResourceName and the same store.</text>
+</svg>

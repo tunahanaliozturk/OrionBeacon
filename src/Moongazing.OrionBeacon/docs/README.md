@@ -1,89 +1,73 @@
 # OrionBeacon
 
-[![CI/CD](https://github.com/tunahanaliozturk/OrionBeacon/actions/workflows/ci-cd.yml/badge.svg)](https://github.com/tunahanaliozturk/OrionBeacon/actions/workflows/ci-cd.yml)
-[![NuGet](https://img.shields.io/nuget/v/OrionBeacon.svg)](https://www.nuget.org/packages/OrionBeacon/)
+Leader election for .NET: run the same service on several instances and OrionBeacon keeps exactly one of them elected, so scheduled jobs, outbox draining and other "only one node should do this" work runs once, not once per instance.
 
-Leader election for .NET. Run the same service on several instances and OrionBeacon makes sure
-exactly one of them is the leader at a time, so scheduled jobs, outbox draining, and other
-"only one node should do this" work runs once, not once per instance.
-
-Part of the **Orion** family. Usable entirely on its own.
-
-## Why
-
-Scale a worker to three instances and your nightly job runs three times. The fix is leader
-election: candidates compete for a renewable lease in a shared store, the holder is the leader,
-and if it dies the lease lapses and another takes over. OrionBeacon implements that with fencing
-tokens (so a leader whose lease lapsed cannot keep writing as if it were still in charge) and a
-hosted loop that keeps the state current, leaving you a single `IsLeader` flag to check.
+![One election cycle: the hosted loop calls TryAcquireOrRenewAsync, the outcome sets IsLeader and fires OnElected or OnDeposed, a store fault is swallowed and retried](https://raw.githubusercontent.com/tunahanaliozturk/OrionBeacon/main/docs/diagrams/election-cycle.png)
 
 ## Install
 
-```
-dotnet add package OrionBeacon
-```
+    dotnet add package OrionBeacon
 
 ## Quick start
 
 ```csharp
+using Moongazing.OrionBeacon;
+using Moongazing.OrionBeacon.Election;
+
 builder.Services.AddOrionBeacon(o =>
 {
     o.ResourceName = "nightly-report";
     o.LeaseDuration = TimeSpan.FromSeconds(15);
-    o.RenewInterval = TimeSpan.FromSeconds(5);   // must be shorter than the lease
+    o.RenewInterval = TimeSpan.FromSeconds(5); // must be shorter than LeaseDuration
 });
-```
 
-Gate leader-only work on the elector:
-
-```csharp
 public sealed class NightlyReportJob(ILeaderElector elector)
 {
     public async Task RunAsync(CancellationToken ct)
     {
-        if (!elector.IsLeader)
+        if (elector is not { IsLeader: true, Lease: { } lease })
         {
-            return; // a different instance is the leader; do nothing here
+            return; // another instance is the leader
         }
 
-        long fence = elector.Lease!.FencingToken; // pass to downstream stores to reject stale writes
-        await ProduceReportAsync(fence, ct);
+        await ProduceReportAsync(lease.FencingToken, ct); // pass the token to downstream writes
     }
+
+    private static Task ProduceReportAsync(long fencingToken, CancellationToken ct) => Task.CompletedTask;
 }
 ```
 
-The hosted loop registered by `AddOrionBeacon` acquires and renews the lease in the background and
-resigns on shutdown, so a healthy follower is promoted promptly.
+`AddOrionBeacon` registers a hosted `LeaderElectionService` that acquires and renews the lease every `RenewInterval` and resigns on shutdown, so a follower is promoted promptly.
 
-## Fencing tokens
+## Options (`LeaderElectionOptions`)
 
-Each new leadership term gets a strictly increasing fencing token. Pass it to any resource the
-leader writes to and have that resource reject anything carrying a lower token than the highest it
-has seen. This is what makes election safe under a stop-the-world pause: a leader that was frozen
-past its lease, then resumed, carries a stale token and is fenced out.
+| Option | Default | Meaning |
+|--------|---------|---------|
+| `ResourceName` | `orion-leader` | The contended resource; every competing candidate uses the same value. |
+| `CandidateId` | machine name + a per-process GUID | This instance's unique identity. |
+| `LeaseDuration` | 15 seconds | How long a lease is granted; a leader that does not renew within it loses the lease. |
+| `RenewInterval` | 5 seconds | How often the leader renews and a follower retries. Must be shorter than `LeaseDuration`. |
 
-## Storage
+Options are validated at registration: empty names, non-positive durations, or a `RenewInterval` not shorter than `LeaseDuration` throw at startup.
 
-The default `InMemoryLeaseStore` elects a leader only within one process, which is right for a
-single node or for tests. To elect across a cluster, implement `ILeaseStore` over Redis, a
-database, or another shared store and register it before `AddOrionBeacon()`; the in-memory store
-is only added if none is present. Implementations must make `TryAcquireOrRenewAsync` atomic and
-hand out a strictly increasing fencing token on each acquisition.
+## Behaviour
 
-## Telemetry and events
+- Fencing tokens: every new leadership term gets a strictly higher `Lease.FencingToken`. A downstream resource that rejects tokens lower than the highest it has seen fences out a leader that resumed after its lease lapsed.
+- Storage: the default `InMemoryLeaseStore` elects within one process (single node, tests). Register a shared `ILeaseStore` before `AddOrionBeacon()` to elect across a cluster; the in-memory store is only added when none is registered.
+- Faults: a store exception on one cycle is swallowed by the hosted loop and retried on the next one; `IsLeader` keeps its previous value until a cycle succeeds.
+- Events: register an `ILeadershipObserver` for `OnElected(Lease)` and `OnDeposed(string resource)`. Observer exceptions are swallowed and never disrupt election.
+- Telemetry: meter `Moongazing.OrionBeacon` (`LeaderElectionDiagnostics.MeterName`) with `orion.beacon.attempts` (tag `orion.outcome`), `orion.beacon.transitions` (tag `direction`) and the `orion.beacon.is_leader` gauge.
+- Testing: `ILeaderElector.TryElectAsync` runs one cycle on demand, and `InMemoryLeaseStore(TimeProvider)` takes a fake clock, so failover tests need no real delays.
+- Targets net8.0, net9.0 and net10.0.
 
-Subscribe to the `Moongazing.OrionBeacon` meter: `orion.beacon.attempts` (tagged `orion.outcome`),
-`orion.beacon.transitions` (tagged `direction`), and an `orion.beacon.is_leader` gauge. Register an
-`ILeadershipObserver` to react to `OnElected` and `OnDeposed`. The observer is fault-safe: an
-exception it throws never disrupts election.
+## Related packages
 
-## Design
+- `OrionBeacon.Stores.Redis` - `ILeaseStore` over Redis for cluster-wide election.
+- `OrionBeacon.Stores.Relational` - `ILeaseStore` over PostgreSQL or SQL Server for cluster-wide election.
+- `Orion.Abstractions` - the family contracts behind the telemetry (`OrionInstrumentation`, `OrionTelemetry`).
 
-- Multi-targets `net8.0`, `net9.0`, `net10.0`.
-- `TreatWarningsAsErrors`, latest analyzers, nullable enabled.
-- The election state machine is driven one cycle at a time, so it is fully testable without real
-  timers; the hosted service simply calls it on the renew interval.
+## Links
 
-## License
-
-MIT.
+- Documentation and full README: https://github.com/tunahanaliozturk/OrionBeacon
+- Changelog: https://github.com/tunahanaliozturk/OrionBeacon/blob/main/CHANGELOG.md
+- License: MIT

@@ -4,8 +4,7 @@
     <RootNamespace>Moongazing.OrionBeacon.Stores.Relational</RootNamespace>
     <Description>Relational (PostgreSQL and SQL Server) ILeaseStore for OrionBeacon leader election. A single leader row per resource, with acquire-or-renew as one atomic conditional upsert (INSERT ... ON CONFLICT ... RETURNING on Postgres, MERGE ... OUTPUT on SQL Server), so two candidates can never both acquire and the fencing token strictly increases across every leadership change.</Description>
     <PackageTags>leader-election;leadership;lease;fencing-token;postgres;postgresql;sql-server;coordination;orion</PackageTags>
-    <!-- Ship this package's own README to NuGet instead of the repository root one. -->
-    <PackageReadmeSource>$(MSBuildThisFileDirectory)README.md</PackageReadmeSource>
+    <PackageReadmeFile>docs/README.md</PackageReadmeFile>
   </PropertyGroup>
   <ItemGroup>
     <PackageReference Include="Npgsql" Version="8.0.6" />
@@ -20,5 +19,8 @@
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\Moongazing.OrionBeacon\Moongazing.OrionBeacon.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="docs/README.md" Pack="true" PackagePath="docs/" />
   </ItemGroup>
 </Project>
